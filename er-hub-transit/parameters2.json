@@ -47,9 +47,6 @@
       "RouteServerB2B": {
         "value": "false"
       },
-      "location": {
-        "value": "southcentralus"
-      },
       "Onprem": {
         "value": {
           "name": "OnPrem",
