@@ -1,12 +1,20 @@
+# Run both command below to create Hub1+On-Premises and Hub2
+
+#Paramters
+rg=er-hub-transit-lab
+location=centralus
+VmAdminUsername=azuser
+vmAdminPassword=Msft123Msft123
+
 az group create --name $rg --location $location
 az deployment group create --name Hub1-$location --resource-group $rg \
---template-uri https://raw.githubusercontent.com/dmauser/Lab/master/RS-ER-VPN-Gateway-Transit/azuredeploy.json \
---parameters VmAdminUsername=$VMAdminUsername gatewaySku=VpnGw1 vpnGatewayGeneration=Generation1 sharedKey=$sharedkey ExpressRouteEnvironmentName=$ERenvironmentName expressRouteCircuitID=$ERResourceID UseAutorizationKey=$UseAutorizationKey UseAutorizationKey=$UseAutorizationKey Onprem=$JsonOnPrem Azure=$JsonAzure \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
 --no-wait
 
-az deployment group create --name Hub1-$location --resource-group $rg \
---template-uri https://raw.githubusercontent.com/dmauser/Lab/master/RS-ER-VPN-Gateway-Transit/azuredeploy.json \
---parameters VmAdminUsername=$VMAdminUsername gatewaySku=VpnGw1 vpnGatewayGeneration=Generation1 sharedKey=$sharedkey ExpressRouteEnvironmentName=$ERenvironmentName expressRouteCircuitID=$ERResourceID UseAutorizationKey=$UseAutorizationKey UseAutorizationKey=$UseAutorizationKey Onprem=$JsonOnPrem Azure=$JsonAzure \
+az deployment group create --name Hub2-$location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--paramters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters2.json
+--parameters VmAdminUsername=$VMAdminUsername vmAdminPassword=$vmAdminPassword
 --no-wait
 
-az deployment group create --parameters
