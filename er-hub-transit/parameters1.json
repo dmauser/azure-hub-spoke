@@ -21,7 +21,7 @@
             "value": "true"
         },
         "sharedKey": {
-            "value": null
+            "value": "abc123"
         },
         "deployHubERGateway": {
             "value": "true"
