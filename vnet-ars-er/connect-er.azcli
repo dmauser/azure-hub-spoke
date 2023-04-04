@@ -1,0 +1,11 @@
+#ExpressRoute specific variables
+ername="onprem-er-circuit"
+
+# 3) Connect ExpressRoute Circuit to the ExpressRoute Gateway in the VNET. Note: Only continue in case the ExpressRoute Circuit is fully provisioned.
+# Create connection from ER VNET Gateway to ER Circuit
+erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
+az network vpn-connection create --name $AzurehubName-conn-$ername \
+--resource-group $rg --vnet-gateway1 $AzurehubName-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none

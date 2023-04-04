@@ -1,0 +1,58 @@
+# Run both command below to create Hub1+On-Premises and Hub2
+
+#Paramters
+rg=er-hub-transit-lab
+location=centralus
+
+# Step 1 - Deploy Hub1 and Hub2 base Lab using the following ARM templates
+
+az group create --name $rg --location $location
+az deployment group create --name Hub1-$location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
+--no-wait
+
+az deployment group create --name Hub2-$location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters2.json \
+--no-wait
+
+# It will prompt you to add usename and password twice (excepcted beahvior)
+# Please provide string value for 'VmAdminUsername'
+# Please provide securestring value for 'VmAdminPassword'
+
+# Step 2 - Create an ExpressRoute Circuit
+
+# 1) Create ExpressRoute Circuit
+# In this example ExpressRoute is created in Dallas using Mepgaport as Provider. Make the necessary changes based on your needs
+# Define variables
+ername=$(echo $rg) # ExpressRoute Circuit Name
+cxlocation="Dallas" #Peering Location
+provider=Megaport # Provider
+az network express-route create --bandwidth 50 -n $ername --peering-location $cxlocation -g $rg --provider $provider -l $location --sku-family MeteredData --sku-tier Standard -o none
+
+# Step 3 - Provision ExpressRoute Circuit with you provider
+
+# Step 4 - Attach ER Circuit to the VNET ERGW on Hub1 and Hub2
+# Add check for Service Provider serviceProviderProvisioningState = Provisioned
+erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
+az network vpn-connection create --name ER-Connection-to-Hub1 \
+--resource-group $rg --vnet-gateway1 Az-Hub1-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none
+
+erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
+az network vpn-connection create --name ER-Connection-to-Hub2 \
+--resource-group $rg --vnet-gateway1 Az-Hub2-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none
+
+
+# List all express route circuits frm the RG in table format
+az network express-route list -g $rg -o table
+# List express route circuit service key
+az network express-route list -g $rg -o table
+# List express route circuit and its service key
+az network express-route list -g $rg --query "[].{Name:name, ServiceKey:serviceKey}" -o table

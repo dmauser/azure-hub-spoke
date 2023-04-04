@@ -1,0 +1,154 @@
+#Parameters
+rg=lab-ars-er-onprem2 #Define your resource group
+location=eastus #Set location
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+
+# NVA specific parameters
+nvasubnetname=nvasubnet
+nvasubnetprefix="192.168.128.160/28"
+nvaname=lxnva
+instances=2 #NVA instances
+#Specific NVA BGP settings
+asn_quagga=65004 # Set ASN
+# Set Networks to be propagated
+bgp_network1=0.0.0.0/0 #Default Route Propagation
+bgp_network2=192.168.128.0/24 #Summary route for Hub/Spoke transit
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+#ExpressRoute specific variables
+ername="onprem-er-circuit"
+perloc1="Dallas"
+providerloc1=Megaport
+
+#Define parameters for Azure Hub and Spokes:
+AzurehubName=az-hub #Azure Hub Name
+AzurehubaddressSpacePrefix=192.168.128.0/24 #Azure Hub VNET address space
+AzurehubNamesubnetName=subnet1 #Azure Hub Subnet name where VM will be provisioned
+Azurehubsubnet1Prefix=192.168.128.0/27 #Azure Hub Subnet address prefix
+AzurehubgatewaySubnetPrefix=192.168.128.32/27 #Azure Hub Gateway Subnet address prefix
+AzureFirewallPrefix=192.168.128.64/26 #Azure Firewall Prefix
+AzurehubrssubnetPrefix=192.168.128.128/27 #Azure Hub Route Server subnet address prefix
+AzureHubBastionSubnet=192.168.128.192/26
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
+Azurespoke1AddressSpacePrefix=192.168.1.0/24 # Azure Spoke 1 VNET address space
+Azurespoke1Subnet1Prefix=192.168.1.0/27 # Azure Spoke 1 Subnet1 address prefix
+Azurespoke2Name=az-spk2 #Azure Spoke 1 name
+Azurespoke2AddressSpacePrefix=192.168.2.0/24 # Azure Spoke 1 VNET address space
+Azurespoke2Subnet1Prefix=192.168.2.0/27 # Azure Spoke 1 VNET address space
+
+#Parsing parameters above in Json format (do not change)
+JsonAzure={\"hubName\":\"$AzurehubName\",\"addressSpacePrefix\":\"$AzurehubaddressSpacePrefix\",\"subnetName\":\"$AzurehubNamesubnetName\",\"subnet1Prefix\":\"$Azurehubsubnet1Prefix\",\"AzureFirewallPrefix\":\"$AzureFirewallPrefix\",\"gatewaySubnetPrefix\":\"$AzurehubgatewaySubnetPrefix\",\"rssubnetPrefix\":\"$AzurehubrssubnetPrefix\",\"bastionSubnetPrefix\":\"$AzureHubBastionSubnet\",\"spoke1Name\":\"$Azurespoke1Name\",\"spoke1AddressSpacePrefix\":\"$Azurespoke1AddressSpacePrefix\",\"spoke1Subnet1Prefix\":\"$Azurespoke1Subnet1Prefix\",\"spoke2Name\":\"$Azurespoke2Name\",\"spoke2AddressSpacePrefix\":\"$Azurespoke2AddressSpacePrefix\",\"spoke2Subnet1Prefix\":\"$Azurespoke2Subnet1Prefix\"}
+
+#Deploy base lab environment = Hub + VPN Gateway + VM and two Spokes with one VM on each.
+echo Deploying base lab: Hub with Spoke1 and 2. VMs and Azure Route Server.
+echo "*** It will take around 20 minutes to finish the deployment ***"
+az group create --name $rg --location $location --output none
+az deployment group create --name lab-$RANDOM --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv3.json \
+--parameters Restrict_SSH_VM_AccessByPublicIP=$mypip deployAzureRouteServer=true Azure=$JsonAzure VmAdminUsername=$username VmAdminPassword=$password virtualMachineSize=$virtualMachineSize deployBastion=true deployHubERGateway=true RouteServerB2B=true \
+--output none
+
+#Create ER circuits
+echo Creating ExpressRoute Circuits
+az network express-route create --bandwidth 50 -n $ername --peering-location "$perloc1" -g $rg --provider $providerloc1 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
+
+# Deploy NVA instances on the target VNET above.
+# Creating NVA VNET
+echo Creating NVA VNET
+az network vnet subnet create --address-prefix $nvasubnetprefix --name $nvasubnetname --resource-group $rg --vnet-name $AzurehubName-vnet --output none
+
+# NSG:
+echo Creating NSG and associate to NVA Subnet
+az network nsg create --resource-group $rg --name $AzurehubName-nva-nsg --location $location -o none
+az network nsg rule create -g $rg --nsg-name $AzurehubName-nva-nsg -n 'default-allow-ssh' --direction Inbound --priority 100 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 22 --access Allow --protocol Tcp --description "Allow inbound SSH" --output none
+az network nsg rule create -g $rg --nsg-name $AzurehubName-nva-nsg \
+ -n 'allow-nva-inetbreakout' \
+ --direction Inbound \
+ --priority 200 \
+ --source-address-prefixes VirtualNetwork \
+ --source-port-ranges '*' \
+ --destination-address-prefixes '*' \
+ --destination-port-ranges "*" \
+ --access Allow --protocol "*" \
+ --description "Allows NVA single NIC use Internet Breakout" \
+ --output none
+az network vnet subnet update -g $rg --name $nvasubnetname --vnet-name $AzurehubName-vnet --network-security-group $AzurehubName-nva-nsg -o none
+
+#Creating Internal Load Balancer, Frontend IP, Backend, probe and LB Rule.
+echo Creating Internal Load Balancer, Frontend IP, Backend, probe and LB Rule.
+az network lb create -g $rg --name $AzurehubName-$nvaname-ilb --sku Standard --frontend-ip-name frontendip1 --backend-pool-name nvabackend --vnet-name $AzurehubName-vnet --subnet=$nvasubnetname --output none --location $location
+az network lb probe create -g $rg --lb-name $AzurehubName-$nvaname-ilb --name sshprobe --protocol tcp --port 22 --output none  
+az network lb rule create -g $rg --lb-name $AzurehubName-$nvaname-ilb --name haportrule1 --protocol all --frontend-ip-name frontendip1 --backend-pool-name nvabackend --probe-name sshprobe --frontend-port 0 --backend-port 0 --output none
+
+echo Provisioning NVAs
+#Define parameters for Azure Hub and Spokes:
+AzurehubName=az-hub #Azure Hub Name
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
+Azurespoke2Name=az-spk2 #Azure Spoke 1 name
+
+# Peer with Route Server
+echo Peering NVAs with Route Server
+nvanames=$(az vm list -g $rg --query '[?contains(name,`'$nvaname'`)].name' -o tsv)
+for nvaintname in $nvanames
+do
+ #NVA BGP config variables (do not change)
+ bgp_routerId=$(az network nic show --name "$nvaintname"VMNic --resource-group $rg --query ipConfigurations[0].privateIpAddress -o tsv)
+ routeserver_IP1=$(az network routeserver list --resource-group $rg --query '{IPs:[0].virtualRouterIps[0]}' -o tsv)
+ routeserver_IP2=$(az network routeserver list --resource-group $rg --query '{IPs:[0].virtualRouterIps[1]}' -o tsv)
+
+ # Enabling routing, NAT and BGP on Linux NVA:
+ echo Enabling routing, NAT and BGP on Linux NVA $nvaintname
+ scripturi="https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-nhip/script/linuxrouterbgp.sh"
+ az vm extension set --resource-group $rg --vm-name $nvaintname --name customScript --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$scripturi\"],\"commandToExecute\": \"./linuxrouterbgp.sh $asn_quagga $bgp_routerId $bgp_network1 $bgp_network2 $routeserver_IP1 $routeserver_IP2 $nexthopip\"}" \
+ --force-update \
+ --no-wait 
+
+ # Building Route Server BGP Peering
+ echo Building BGP Peering between $AzurehubName-routeserver and $nvaintname
+ az network routeserver peering create --resource-group $rg --routeserver $AzurehubName-routeserver --name $nvaintname --peer-asn $asn_quagga \
+ --peer-ip $(az network nic show --name "$nvaintname"VMNic --resource-group $rg --query ipConfigurations[0].privateIpAddress -o tsv) \
+ --output none
+done
+
+# Attach NVAs to the Backend as NICs
+for vm in $nvanames
+do
+  az network nic ip-config address-pool add \
+  --address-pool nvabackend \
+  --ip-config-name ipconfig"$vm" \
+  --nic-name "$vm"VMNic \
+  --resource-group $rg \
+  --lb-name $AzurehubName-$nvaname-ilb \
+  --output none
+done
+
+# VM Net utilities and serial console
+#Enable boot diagnostics for all VMs in the resource group (Serial console)
+az vm boot-diagnostics enable --ids $(az vm list -g $rg --query "[].id" -o tsv) -o none
+
+echo Installing tools for networking connectivity validation such as traceroute, tcptraceroute, iperf and others  
+nettoolsuri="https://raw.githubusercontent.com/dmauser/azure-vm-net-tools/main/script/nettools.sh"
+for vm in `az vm list -g $rg --query "[?storageProfile.imageReference.offer=='UbuntuServer'].name" -o tsv`
+do
+ az vm extension set \
+ --resource-group $rg \
+ --vm-name $vm \
+ --name customScript \
+ --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$nettoolsuri\"],\"commandToExecute\": \"./nettools.sh\"}" \
+ --no-wait
+done
+
+echo Creating UDR Internet Breakout and associate it to $nvasubnetname
+az network route-table create --name $AzurehubName-rt-nva --resource-group $rg --location $location -o none
+az network route-table route create --resource-group $rg --name default-to-Internet --route-table-name $AzurehubName-rt-nva  \
+ --address-prefix 0.0.0.0/0 \
+ --next-hop-type Internet \
+ --output none
+az network vnet subnet update -n $nvasubnetname -g $rg --vnet-name $AzurehubName-vnet --route-table $AzurehubName-rt-nva -o none
+echo "Deployment has finished"
