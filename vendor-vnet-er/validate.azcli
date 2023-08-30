@@ -1,0 +1,50 @@
+# List all VMs Public IP address
+az vm list-ip-addresses --output table -g $rg
+
+
+# ssh into the VM
+ssh azureuser@<public-ip-address>
+
+# Open a ssh session in all vms in the resource group using their public ip
+for ip in $(az vm list-ip-addresses -g $rg --query "[].virtualMachine.network.publicIpAddresses[*].ipAddress" -o tsv); 
+do ssh azureuser@$ip; 
+done
+
+# Open SSH on vendor1-vm1 using its public ip
+ssh azureuser@40.122.173.225
+
+# Open SSH on vendor2-vm1 using its public ip
+ssh azureuser@52.173.133.49
+
+# SSH to Az-Spk1-lxvm
+ssh azureuser@52.165.176.255
+
+# SSH to Az-Spk2-lxvm
+ssh azureuser@13.89.191.130
+
+# Get vendor1-vm1 effective route table
+az network nic show-effective-route-table -g $rg --nic-name vendor1-vm1VMNic --output table
+
+# Get vendor2-vm1 effective route table
+az network nic show-effective-route-table -g $rg --nic-name vendor2-vm1VMNic --output table
+
+# Get vendor-transit-vm1 effective route table
+az network nic show-effective-route-table -g $rg --nic-name vendor-transit-vm1VMNic --output table
+
+# Get az-spk1-lxvm effective route table
+az network nic show-effective-route-table -g $rg --nic-name az-spk1-lxvmVMNic --output table
+
+
+
+# Access on-premises
+gcloud compute ssh $envname-vm1 --zone=us-central1-b
+
+# Enable UDRs
+az network vnet subnet update -g $rg --vnet-name vendor-hub-vnet -n GatewaySubnet --route-table vendor-hub-gw-rt --output none
+az network vnet subnet update -g $rg --vnet-name vendor1-vnet -n main --route-table vendor1-rt --output none
+az network vnet subnet update -g $rg --vnet-name vendor2-vnet -n main --route-table vendor2-rt --output none
+
+# Disable UDRs
+az network vnet subnet update -g $rg --vnet-name vendor-hub-vnet -n GatewaySubnet --route-table null --output none
+az network vnet subnet update -g $rg --vnet-name vendor1-vnet -n main --route-table null --output none
+az network vnet subnet update -g $rg --vnet-name vendor2-vnet -n main --route-table null --output none

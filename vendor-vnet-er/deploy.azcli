@@ -1,6 +1,10 @@
 #Paramters
 rg=vendor-vnet-er-lab
 location=centralus
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
 #ExpressRoute specific variables
 ername1="onprem-er-circuit" 
 perloc1="Chicago"
@@ -14,50 +18,195 @@ if ! az extension list | grep -q azure-firewall; then
     az extension add --name azure-firewall --only-show-errors
 fi
 
-
 # Step 1 - Deploy Azure Hub and Spoke 1 and Spoke 2 with ExpressRoute
 
 az group create --name $rg --location $location
 az deployment group create --name Hub1-$location --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
---parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vendor-vnet-er/parameters.json \
 --no-wait
 
 # Step 2 - Deploy Vendor Hub, Vendor Transit VNET and Empty VNET
-
 
 # Vendor Hub
 az network vnet create --address-prefixes 10.10.0.0/24 -n vendor-hub-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.10.0.0/27 --output none
 az network vnet subnet create --address-prefix 10.10.0.32/27 --name GatewaySubnet -g $rg --vnet-name vendor-hub-vnet --output none
 
+# Empty VNET
+az network vnet create --address-prefixes 172.16.1.0/24 172.16.2.0/24 -n vendor-empty-vnet -g $rg -l $location  --output none
+
 # Vendor Transit VNET
 az network vnet create --address-prefixes 10.20.0.0/24 -n vendor-transit-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.20.0.0/27 --output none
-az network vnet create --address-prefixes 10.20.0.0/24 -n vendor-transit-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.20.0.0/27 --output none
-az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet -n AzureFirewallSubnet --address-prefixes 10.20.0.64/26 --output none
 
-# Deploy VM on the main subnet
-az vm create --resource-group $rg --name vendor-hub-vm1 --image Ubuntu2204 --admin-username azureuser --generate-ssh-keys --vnet-name vendor-hub-vnet --subnet main --output none
+# Vendor1 VNET
+az network vnet create --address-prefixes 172.16.1.0/24 -n vendor1-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 172.16.1.0/27 --output none
+# Vendor2 VNET
+az network vnet create --address-prefixes 172.16.2.0/24 -n vendor2-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 172.16.2.0/27 --output none
 
-echo Creating Branch ExpressRoute Gateway
-az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none
-az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet branch --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+# Deploy VMs on the main subnet for each VNET
+az vm create --resource-group $rg --name vendor-hub-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor-hub-vnet --subnet main --no-wait --output none --only-show-errors
+az vm create --resource-group $rg --name vendor-transit-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor-transit-vnet --subnet main --no-wait --output none --only-show-errors
+az vm create --resource-group $rg --name vendor1-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor1-vnet --subnet main --no-wait --output none --only-show-errors
+az vm create --resource-group $rg --name vendor2-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor2-vnet --subnet main --no-wait --output none --only-show-errors
 
-echo Creating spoke VNETs...
-# Creating spokes virtual network
-# location
-az network vnet create --address-prefixes 10.2.0.0/24 -n spoke2 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.0.0/27 --output none
-az network vnet create --address-prefixes 10.2.1.0/24 -n spoke5 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.1.0/27 --output none
-az network vnet create --address-prefixes 10.2.2.0/24 -n spoke6 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.2.0/27 --output none
+echo Creating vendor-hub ExpressRoute Gateway
+az network public-ip create --name vendor-hub-ergw-pip --resource-group $rg --location $location -o none
+az network vnet-gateway create --name vendor-hub-ergw --resource-group $rg --location $location --public-ip-address vendor-hub-ergw-pip --vnet vendor-hub-vnet --gateway-type "ExpressRoute" --sku "Standard" --no-wait
 
-
-
-# Step 3 - Deploy Vendor VNETs and peer them to the Vendor Transit VNET
-
-
-# Step 4 - Deploy ER Circuit and connect them to Azure Hub and Vendor Hub
 #ExpressRoute specific variables
 ername1="onprem-er-circuit" 
 perloc1="Chicago"
 providerloc1=Megaport
 az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
 
+echo Deploy Azure Firewall
+# Create Firewall Policy
+echo Creating Azure Firewall Policy 
+az network firewall policy create -g $rg -n vendor-transit-AZFW-Policy --threat-intel-mode Alert --location $location --sku $firewalltier --output none
+
+# Create firewall policy rule collection group 
+echo Creating Azure Firewall Policy Rule Collection Group...
+az network firewall policy rule-collection-group create -g $rg --policy-name vendor-transit-AZFW-Policy -n NetworkRuleCollectionGroup --priority 200 --output none
+
+# Create a any to any Network Rule Collection
+# For vendor-transit-AZFW-Policy
+az network firewall policy rule-collection-group collection add-filter-collection \
+ --resource-group $rg \
+ --policy-name vendor-transit-AZFW-Policy \
+ --name GenericCollection \
+ --rcg-name NetworkRuleCollectionGroup \
+ --rule-type NetworkRule \
+ --rule-name AnytoAny \
+ --action Allow \
+ --ip-protocols "Any" \
+ --source-addresses "*" \
+ --destination-addresses  "*" \
+ --destination-ports "*" \
+ --collection-priority 100 \
+ --output none
+
+echo Building Azure Firewall...
+#Spoke 2
+# Create Azure Firewall Subnet and Management Subnets
+az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet -n AzureFirewallSubnet --address-prefixes 10.20.0.64/26 --output none
+az network public-ip create --name vendor-transit-azfw-pip --resource-group $rg --location $location --allocation-method static --sku standard --output none --only-show-errors
+
+az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet -n AzureFirewallManagementSubnet --address-prefixes 10.20.0.128/26 --output none
+az network public-ip create --name vendor-transit-azfw-mgmtpip --resource-group $rg --location $location --allocation-method static --sku standard --output none --only-show-errors
+
+# Create Azure Firewall
+az network firewall create --name vendor-transit-azfw --resource-group $rg --location $location --firewall-policy vendor-transit-AZFW-Policy --vnet-name vendor-transit-vnet --sku AZFW_VNet --tier $firewalltier --conf-name FW-config --m-conf-name FW-mgmconfig --m-public-ip vendor-transit-azfw-mgmtpip --output none --only-show-errors
+# Add Public IP to the firewall
+az network firewall ip-config create --firewall-name vendor-transit-azfw --name FW-config --m-name FW-mgmconfig --public-ip-address vendor-transit-azfw-pip --m-public-ip-address vendor-transit-azfw-mgmtpip --m-vnet-name vendor-transit-vnet --resource-group $rg --vnet-name vendor-transit-vnet --output none --only-show-errors
+az network firewall update --name vendor-transit-azfw --resource-group $rg --output none --only-show-errors
+
+#Creating Log Analytics Workspaces
+## Log Analytics workspace name. 
+Workspacename1=AZFirewall-$location-Logs 
+
+echo Creating Log Analytics Workspaces...
+msinsights=$(az provider show -n microsoft.insights --query registrationState -o tsv)
+if [ $msinsights == 'NotRegistered' ] || [ $msinsights == 'Unregistered' ]; then
+az provider register -n microsoft.insights --accept-terms
+ prState=''
+ while [[ $prState != 'Registered' ]];
+ do
+    prState=$(az provider show -n microsoft.insights --query registrationState -o tsv)
+    echo "MS Insights State="$prState
+    sleep 5
+ done
+fi
+az monitor log-analytics workspace create -g $rg --workspace-name $Workspacename1 --location $location --no-wait
+
+#Enabling Azure Firewall diagnostics
+echo Enabling Azure Firewall diagnostics...
+az monitor diagnostic-settings create -n 'toLogAnalytics' \
+--resource $(az network firewall show --name vendor-transit-azfw --resource-group $rg --query id -o tsv) \
+--workspace $(az monitor log-analytics workspace show -g $rg --workspace-name $Workspacename1 --query id -o tsv) \
+--logs '[{"category":"AzureFirewallApplicationRule","Enabled":true}, {"category":"AzureFirewallNetworkRule","Enabled":true}, {"category":"AzureFirewallDnsProxy","Enabled":true}]' \
+--metrics '[{"category": "AllMetrics","enabled": true}]' \
+--output none
+
+# VNET Peerings
+# Loop script to wait vendor-hub-ergw get created
+prState=$(az network vnet-gateway show -g $rg -n vendor-hub-ergw --query provisioningState -o tsv)
+if [[ $prState == 'Failed' ]];
+then
+    echo ER Gateway is in fail state. Deleting and rebuilding.
+    az network vnet-gateway delete -n vendor-hub-ergw -g $rg
+    az network vnet-gateway create --name vendor-hub-ergw --resource-group $rg --location $region --public-ip-address vendor-hub-ergw-pip --vnet vendor-hub --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+    sleep 5
+else
+    prState=''
+    while [[ $prState != 'Succeeded' ]];
+    do
+        prState=$(az network vnet-gateway show -g $rg -n vendor-hub-ergw --query provisioningState -o tsv)
+        echo "vendor-hub-ergw provisioningState="$prState
+        sleep 5
+    done
+fi
+# Vendor Hub to Vendor Transit (Allow Remote Gateway/Gateway Transit)
+az network vnet peering create -g $rg -n vendorhub-to-vendortransit --vnet-name vendor-hub-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-transit-vnet  --query id --out tsv) --allow-gateway-transit --output none --no-wait
+az network vnet peering create -g $rg -n vendortransit-to-vendorhub --vnet-name vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-hub-vnet --query id --out tsv) --use-remote-gateways --output none --no-wait
+# Vendor Hub to Vendor Empty (Allow Remote Gateway/Gateway Transit)
+az network vnet peering create -g $rg -n vendorhub-to-emptyvendorvnet --vnet-name vendor-hub-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-empty-vnet  --query id --out tsv) --allow-gateway-transit --output none --no-wait
+az network vnet peering create -g $rg -n emptyvendorvnet-to-vendorhub --vnet-name vendor-empty-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-hub-vnet --query id --out tsv) --use-remote-gateways --output none --no-wait
+# Vendor1 to Vendor Transit VNET
+az network vnet peering create -g $rg -n vendor1-to-vendortransit --vnet-name vendor1-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-transit-vnet  --query id --out tsv) --output none --no-wait
+az network vnet peering create -g $rg -n vendor-transit-to-vendor1 --vnet-name vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor1-vnet --query id --out tsv) --output none --no-wait
+# Vendor2 to Vendor Transit VNET
+az network vnet peering create -g $rg -n vendor2-to-vendortransit --vnet-name vendor2-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor-transit-vnet  --query id --out tsv) --output none --no-wait
+az network vnet peering create -g $rg -n vendor-transit-to-vendor2 --vnet-name vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n vendor2-vnet --query id --out tsv) --output none --no-wait
+
+
+
+# Create Route Tables
+# Get Azure Firewall Private IP
+azfwprivateip=$(az network firewall show -g $rg -n vendor-transit-azfw --query "ipConfigurations[0].privateIPAddress" -o tsv)
+echo Creating Route Tables...
+# Vendor-Hub Route Table
+az network route-table create -g $rg -n vendor-hub-gw-rt --location $location --output none
+az network route-table route create -g $rg --route-table-name vendor-hub-gw-rt -n vendor1-transit-rt-rule --address-prefix 172.16.1.0/24 --next-hop-type VirtualAppliance --next-hop-ip-address $azfwprivateip --output none
+az network route-table route create -g $rg --route-table-name vendor-hub-gw-rt -n vendor2-transit-rt-rule --address-prefix 172.16.2.0/24 --next-hop-type VirtualAppliance --next-hop-ip-address $azfwprivateip --output none
+# Associate with the Gateway Subnet
+az network vnet subnet update -g $rg --vnet-name vendor-hub-vnet -n GatewaySubnet --route-table vendor-hub-gw-rt --output none
+# Vendor 1 Route Table
+az network route-table create -g $rg -n vendor1-rt --location $location --output none
+az network route-table route create -g $rg --route-table-name vendor1-rt -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $azfwprivateip --output none
+az network route-table route create -g $rg --route-table-name vendor1-rt -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
+# Associate with main subnet
+az network vnet subnet update -g $rg --vnet-name vendor1-vnet -n main --route-table vendor1-rt --output none
+# Vendor 2 Route Table
+az network route-table create -g $rg -n vendor2-rt --location $location --output none
+az network route-table route create -g $rg --route-table-name vendor2-rt -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $azfwprivateip --output none
+az network route-table route create -g $rg --route-table-name vendor2-rt -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
+# Associate with main subnet
+az network vnet subnet update -g $rg --vnet-name vendor2-vnet -n main --route-table vendor2-rt --output none
+
+echo "Installing net utilities inside VMs (traceroute, tcptraceroute, iperf3, hping3, and others)"
+nettoolsuri="https://raw.githubusercontent.com/dmauser/azure-vm-net-tools/main/script/nettools.sh"
+for vm in `az vm list -g $rg --query "[?storageProfile.imageReference.publisher=='Canonical'].name" -o tsv`
+do
+ az vm extension set \
+ --resource-group $rg \
+ --vm-name $vm \
+ --name customScript \
+ --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$nettoolsuri\"],\"commandToExecute\": \"./nettools.sh\"}" \
+ --no-wait
+done
+
+# Connect ExpressRoute Circuit to both ER Gateways:
+erid=$(az network express-route show -n $ername1 -g $rg --query id -o tsv) 
+az network vpn-connection create --name ER-Connection-to-AzHub \
+--resource-group $rg --vnet-gateway1 Az-Hub1-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none
+
+erid=$(az network express-route show -n $ername1 -g $rg --query id -o tsv) 
+az network vpn-connection create --name ER-Connection-to-VendorHub \
+--resource-group $rg --vnet-gateway1 vendor-hub-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none
