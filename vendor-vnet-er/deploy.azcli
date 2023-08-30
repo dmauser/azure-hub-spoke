@@ -1,0 +1,63 @@
+#Paramters
+rg=vendor-vnet-er-lab
+location=centralus
+#ExpressRoute specific variables
+ername1="onprem-er-circuit" 
+perloc1="Chicago"
+providerloc1=Megaport
+firewalltier=basic
+
+
+# Check if azure-firewall extension is installed if not install it
+if ! az extension list | grep -q azure-firewall; then
+    echo "azure-firewall extension is not installed, installing it now..."
+    az extension add --name azure-firewall --only-show-errors
+fi
+
+
+# Step 1 - Deploy Azure Hub and Spoke 1 and Spoke 2 with ExpressRoute
+
+az group create --name $rg --location $location
+az deployment group create --name Hub1-$location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
+--no-wait
+
+# Step 2 - Deploy Vendor Hub, Vendor Transit VNET and Empty VNET
+
+
+# Vendor Hub
+az network vnet create --address-prefixes 10.10.0.0/24 -n vendor-hub-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.10.0.0/27 --output none
+az network vnet subnet create --address-prefix 10.10.0.32/27 --name GatewaySubnet -g $rg --vnet-name vendor-hub-vnet --output none
+
+# Vendor Transit VNET
+az network vnet create --address-prefixes 10.20.0.0/24 -n vendor-transit-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.20.0.0/27 --output none
+az network vnet create --address-prefixes 10.20.0.0/24 -n vendor-transit-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.20.0.0/27 --output none
+az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet -n AzureFirewallSubnet --address-prefixes 10.20.0.64/26 --output none
+
+# Deploy VM on the main subnet
+az vm create --resource-group $rg --name vendor-hub-vm1 --image Ubuntu2204 --admin-username azureuser --generate-ssh-keys --vnet-name vendor-hub-vnet --subnet main --output none
+
+echo Creating Branch ExpressRoute Gateway
+az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none
+az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet branch --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+
+echo Creating spoke VNETs...
+# Creating spokes virtual network
+# location
+az network vnet create --address-prefixes 10.2.0.0/24 -n spoke2 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.0.0/27 --output none
+az network vnet create --address-prefixes 10.2.1.0/24 -n spoke5 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.1.0/27 --output none
+az network vnet create --address-prefixes 10.2.2.0/24 -n spoke6 -g $rg -l $location --subnet-name main --subnet-prefixes 10.2.2.0/27 --output none
+
+
+
+# Step 3 - Deploy Vendor VNETs and peer them to the Vendor Transit VNET
+
+
+# Step 4 - Deploy ER Circuit and connect them to Azure Hub and Vendor Hub
+#ExpressRoute specific variables
+ername1="onprem-er-circuit" 
+perloc1="Chicago"
+providerloc1=Megaport
+az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
+
