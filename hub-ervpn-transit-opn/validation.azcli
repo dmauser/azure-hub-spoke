@@ -1,0 +1,42 @@
+#Parameters
+rg=lab-ervpn-transit-opn #Define your resource group
+location=eastus #Set location
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+onprembgp=65100 #Set BGP ASN for on-premises
+onprembgpaddr=169.254.0.1 #Set BGP IP address for on-premises
+sharedkey=abc123 #Set shared key for VPN connection
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+#Define parameters for Azure Hub and Spokes:
+AzurehubName=az-hub #Azure Hub Name
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
+Azurespoke2Name=az-spk2 #Azure Spoke 1 name
+
+
+# List all vm ip addresses
+az vm list-ip-addresses -o table --resource-group $rg
+
+# Get az-hub-lxvm-nic effective route table but exlude none for the output
+az network nic show-effective-route-table --name az-hub-lxvm-nic --resource-group $rg --output table | grep -v None
+
+# Get onprem-vm1VMNic effective route table but exlude none for the output
+az network nic show-effective-route-table --name onprem-vm1VMNic --resource-group $rg --output table | grep -v None
+
+
+# NSG to support Internet breaout:
+
+az network nsg rule create -g $rg --nsg-name $location-default-nsg  \
+ -n 'allow-nva-inetbreakout' \
+ --direction Inbound \
+ --priority 200 \
+ --source-address-prefixes VirtualNetwork \
+ --source-port-ranges '*' \
+ --destination-address-prefixes '*' \
+ --destination-port-ranges "*" \
+ --access Allow --protocol "*" \
+ --description "Allows NVA single NIC use Internet Breakout" \
+ --output none

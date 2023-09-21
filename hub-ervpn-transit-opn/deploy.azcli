@@ -1,0 +1,157 @@
+#Parameters
+rg=lab-ervpn-transit-opn #Define your resource group
+location=eastus #Set location
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+onprembgp=65100 #Set BGP ASN for on-premises
+onprembgpaddr=169.254.0.1 #Set BGP IP address for on-premises
+sharedkey=abc123 #Set shared key for VPN connection
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+#Define parameters for Azure Hub and Spokes:
+AzurehubName=az-hub #Azure Hub Name
+AzurehubaddressSpacePrefix=10.0.0.0/24 #Azure Hub VNET address space
+AzurehubNamesubnetName=subnet1 #Azure Hub Subnet name where VM will be provisioned
+Azurehubsubnet1Prefix=10.0.0.0/27 #Azure Hub Subnet address prefix
+AzurehubgatewaySubnetPrefix=10.0.0.32/27 #Azure Hub Gateway Subnet address prefix
+AzureFirewallPrefix=10.0.0.64/26 #Azure Firewall Prefix
+AzurehubrssubnetPrefix=10.0.0.128/27 #Azure Hub Route Server subnet address prefix
+AzureHubBastionSubnet=10.0.0.192/26
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
+Azurespoke1AddressSpacePrefix=10.0.1.0/24 # Azure Spoke 1 VNET address space
+Azurespoke1Subnet1Prefix=10.0.1.0/27 # Azure Spoke 1 Subnet1 address prefix
+Azurespoke2Name=az-spk2 #Azure Spoke 1 name
+Azurespoke2AddressSpacePrefix=10.0.2.0/24 # Azure Spoke 1 VNET address space
+Azurespoke2Subnet1Prefix=10.0.2.0/27 # Azure Spoke 1 VNET address space
+
+#Parsing parameters above in Json format (do not change)
+JsonAzure={\"hubName\":\"$AzurehubName\",\"addressSpacePrefix\":\"$AzurehubaddressSpacePrefix\",\"subnetName\":\"$AzurehubNamesubnetName\",\"subnet1Prefix\":\"$Azurehubsubnet1Prefix\",\"AzureFirewallPrefix\":\"$AzureFirewallPrefix\",\"gatewaySubnetPrefix\":\"$AzurehubgatewaySubnetPrefix\",\"rssubnetPrefix\":\"$AzurehubrssubnetPrefix\",\"bastionSubnetPrefix\":\"$AzureHubBastionSubnet\",\"spoke1Name\":\"$Azurespoke1Name\",\"spoke1AddressSpacePrefix\":\"$Azurespoke1AddressSpacePrefix\",\"spoke1Subnet1Prefix\":\"$Azurespoke1Subnet1Prefix\",\"spoke2Name\":\"$Azurespoke2Name\",\"spoke2AddressSpacePrefix\":\"$Azurespoke2AddressSpacePrefix\",\"spoke2Subnet1Prefix\":\"$Azurespoke2Subnet1Prefix\"}
+
+#Deploy base lab environment = Hub + VPN Gateway + VM and two Spokes with one VM on each.
+echo Deploying base lab: Hub with Spoke1 and 2. VMs and Azure Route Server.
+echo "*** It will take around 20 minutes to finish the deployment ***"
+az group create --name $rg --location $location --output none
+az deployment group create --name lab-$RANDOM --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv3.json \
+--parameters Restrict_SSH_VM_AccessByPublicIP=$mypip deployHubERGateway=true enableBgp=true deployHubVPNGateway=true deployAzureRouteServer=true RouteServerB2B=true Azure=$JsonAzure VmAdminUsername=$username VmAdminPassword=$password virtualMachineSize=$virtualMachineSize deployBastion=true \
+--output none
+
+#Deploy On-premises OPNsense
+echo Deploying OPNsense VM.
+
+# OPNsense NVA1 parameters
+ShellScriptName=configureopnsense.sh
+scenarioOption="TwoNics"
+virtualMachineName=onprem-opnnva
+virtualNetworkName=onprem-vnet
+existingvirtualNetwork=new
+VNETAddress=10.100.0.0/24 
+UntrustedSubnetCIDR=10.100.0.0/28
+TrustedSubnetCIDR=10.100.0.16/28
+subnet1=10.100.0.96/27
+subnet2=10.100.0.160/27
+existingUntrustedSubnetName=untrusted
+existingTrustedSubnetName=trusted
+OpnScriptURI=https://raw.githubusercontent.com/dmauser/opnazure/master/scripts/
+
+echo "Deploying OPNsense NVA1 on the onprem"
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_0:13_0-release:13.0.0 -o none
+az deployment group create --name onprem-nva-$RANDOM --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters OpnScriptURI=$OpnScriptURI scenarioOption=$scenarioOption virtualMachineName=$virtualMachineName virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+sleep 5
+echo Checking Branch VNET provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet show -n onprem-vnet -g $rg  --query 'provisioningState' -o tsv)
+    echo "Branch VNET provisioning state provisioningState="$prState
+    sleep 5
+done
+
+echo Creating Branch VMs...
+# Depoly On-premises VM:
+# Subnet1
+az network vnet subnet create -g $rg --vnet-name $virtualNetworkName -n main --address-prefixes $subnet1  --output none
+az vm create -n onprem-vm1 -g $rg --image ubuntults --public-ip-sku Standard --size $virtualMachineSize -l $location --subnet main --vnet-name $virtualNetworkName --admin-username $username --admin-password $password --nsg "" --no-wait
+
+# UDR to reach Azure
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+## Creating UDR + Disable BGP Propagation
+az network route-table create --name onprem-rt-default-nva  --resource-group $rg --location $location --disable-bgp-route-propagation true --output none
+## Default route to NVA
+az network route-table route create --resource-group $rg --name default --route-table-name onprem-rt-default-nva \
+--address-prefix 0.0.0.0/0 \
+--next-hop-type VirtualAppliance \
+--next-hop-ip-address $nvatrustedip \
+--output none
+az network route-table route create --resource-group $rg --name exception-ssh --route-table-name onprem-rt-default-nva \
+--address-prefix $mypip/32 \
+--next-hop-type Internet \
+--output none
+# Associate UDR to main subnet
+az network vnet subnet update --vnet-name $virtualNetworkName -g $rg --name main --route-table onprem-rt-default-nva --output none
+
+# Update NSG:
+echo Creating NSG rules
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-https' --direction Inbound --priority 330 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTP restricted to Home PIP" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 310 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-out' --direction outbound --priority 320 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp500 --priority 100 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp4500 --priority 101 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
+
+# Add NSG to onprem-vnet main subnet
+az network vnet subnet update -g $rg --name main --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group null --output none
+# Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
+az network vnet subnet update -g $rg --name trusted-subnet --vnet-name onprem-vnet --network-security-group null -o none
+az network vnet subnet update -g $rg --name untrusted-subnet --vnet-name onprem-vnet --network-security-group null -o none
+az network vnet subnet update -g $rg --name trusted-subnet --vnet-name onprem-vnet --network-security-group $location-default-nsg -o none
+az network vnet subnet update -g $rg --name untrusted-subnet --vnet-name onprem-vnet --network-security-group $location-default-nsg -o none
+
+#ExpressRoute specific variables
+ername1="labervpn-er-circuit" 
+perloc1="Chicago"
+providerloc1=Megaport
+#Create ER circuits
+echo Creating ExpressRoute Circuits
+az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
+
+# Get Public IP onprem-opnnva-PublicIP
+echo Getting OPNsense Public IP
+opnpublicip=$(az network public-ip show -n onprem-opnnva-PublicIP -g $rg --query ipAddress -o tsv)
+echo $opnpublicip
+#Create Local Gateway to Onpremises OPNSense Public IP
+echo Creating Local Gateway
+az network local-gateway create -n az-lng-opnrem \
+--resource-group $rg \
+--gateway-ip-address $opnpublicip \
+--asn $onprembgp \
+--bgp-peering-address $onprembgpaddr \
+-output none
+
+# Create VPN Gateway connection to On-Premises
+az network vpn-connection create --name az-to-onprem \
+--resource-group $rg \
+--vnet-gateway1 $AzurehubName-vpngw \
+ -l $location \
+--shared-key $sharedkey \
+--local-gateway2 az-lng-opnrem \
+--enable-bgp \
+--output none
+
+# Access OPNSense console using Public IP and configure the Site to Site VPN
+echo https://$opnpublicip
+# Get azure VPN Gateway Public IPs
+echo Getting Azure VPN Gateway Public IP
+az network public-ip show -n $AzurehubName-vpngw-pip1 -g $rg --query ipAddress -o tsv
+az network public-ip show -n $AzurehubName-vpngw-pip2 -g $rg --query ipAddress -o tsv
+echo $sharedkey
