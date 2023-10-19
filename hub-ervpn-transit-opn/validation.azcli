@@ -23,8 +23,8 @@ az vm list-ip-addresses -o table --resource-group $rg
 # Get az-hub-lxvm-nic effective route table but exlude none for the output
 az network nic show-effective-route-table --name az-hub-lxvm-nic --resource-group $rg --output table | grep -v None
 
-# Get onprem-vm1VMNic effective route table but exlude none for the output
-az network nic show-effective-route-table --name onprem-vm1VMNic --resource-group $rg --output table | grep -v None
+# Show az-to-onprem vpn connection status
+az network vpn-connection show --name az-to-onprem --resource-group $rg --query connectionStatus -o tsv
 
 
 # NSG to support Internet breaout:
@@ -40,3 +40,7 @@ az network nsg rule create -g $rg --nsg-name $location-default-nsg  \
  --access Allow --protocol "*" \
  --description "Allows NVA single NIC use Internet Breakout" \
  --output none
+
+
+# Get onprem-vm1VMNic effective route table but exlude none for the output
+az network nic show-effective-route-table --name onprem-vm1VMNic --resource-group $rg --output table | grep -v None

@@ -1,0 +1,15 @@
+# Pre-Requisites
+
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+az group create --name $rg --location $location
+az deployment group create --name Hub1-$location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vendor-vnet-er/parameters.json \
+--no-wait
