@@ -1,194 +1,70 @@
 {
-    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "VmAdminUsername": {
-            "type": "string"
-        },
-        "VmAdminPassword": {
-            "type": "secureString"
-        },
-
-        "virtualMachineSize": {
-            "type": "string",
-            "defaultValue": "Standard_B1ms"
-        },
-        "virtualMachinePublicIP": {
-            "type": "string",
-            "defaultValue": "true",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
-        },
-        "deployBastion": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
-        },
-        "Restrict_SSH_VM_AccessByPublicIP": {
-            "type": "string",
-            "defaultValue": "*",
-            "metadata": {
-                "description": "The default is to allow SSH access from any source Public IP (*). To restric access it, please specify your Public IP address with CIDR. For single IP add 1.1.1.1/32."
-            }
+        "restrict_SSH_VM_AccessByPublicIP": {
+            "value": "*"
         },
         "deployHubVPNGateway": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "true"
         },
         "deployOnpremisesVPNGateway": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "false"
         },
         "gatewaySku": {
-            "type": "string",
-            "defaultValue": "VpnGw1",
-            "allowedValues": [
-                "VpnGw1",
-                "VpnGw2",
-                "VpnGw3",
-                "VpnGw4",
-                "VpnGw5"
-            ],
-            "metadata": {
-                "description": "The SKU for the VPN Gateway"
-            }
+            "value": "VpnGw1"
         },
         "vpnGatewayGeneration": {
-            "type": "string",
-            "defaultValue": "Generation1",
-            "allowedValues": [
-                "Generation1",
-                "Generation2"
-            ],
-            "metadata": {
-                "description": "Select VPN Gateway Generation."
-            }
+            "value": "Generation1"
         },
         "enableBgp": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "true"
         },
         "sharedKey": {
-            "type": "securestring",
-            "defaultValue": "P@assw@d",
-            "metadata": {
-                "description": "The shared key used to VPN tunnel between the two Azure and OnPrem VPN Gateways."
-            }
+            "value": "abc123"
         },
         "deployHubERGateway": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "true"
         },
         "connect-to-ExpressRouteCircuit": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "false"
         },
-        "ExpressRouteEnvironmentName": {
-            "type": "String",
-            "defaultValue": "null",
-            "metadata": {
-                "description": "Add the environment name such as AVS, HLI, Skytap, RemoteLab representing On-premises location"
-            }
+        "expressRouteEnvironmentName": {
+            "value": "null"
         },
         "expressRouteCircuitID": {
-            "type": "String",
-            "defaultValue": "null",
-            "metadata": {
-                "description": "Specify ExpressRoute Circuit Resource ID"
-            }
+            "value": "null"
         },
-        "UseAutorizationKey": {
-            "type": "String",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ],
-            "metadata": {
-                "description": "Select true or falset for ExpressRoute Authorization Key"
-            }
+        "useAutorizationKey": {
+            "value": "false"
         },
-        "AutorizationKey": {
-            "type": "string",
-            "defaultValue": "null",
-            "metadata": {
-                "description": "Add your ExpressRoute Authorization Key in case you have answered true on Use Authorization Key"
-            }
+        "autorizationKey": {
+            "value": "null"
         },
         "deployAzureRouteServer": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ]
+            "value": "true"
         },
-        "RouteServerB2B": {
-            "type": "string",
-            "defaultValue": "false",
-            "allowedValues": [
-                "true",
-                "false"
-            ],
-            "metadata": {
-                "description": "Allow RouterServer Branch to Branch Traffic"
-            }
+        "routeServerB2B": {
+            "value": "true"
         },
-        "location": {
-            "type": "string",
-            "metadata": {
-                "description": "Location of the resources"
-            },
-            "defaultValue": "[resourceGroup().location]"
-        },
-        "Onprem": {
-            "type": "object",
-            "defaultValue": {
+        "onprem": {
+            "value": {
                 "name": "OnPrem",
                 "addressSpacePrefix": "192.168.100.0/24",
-                "subnet1Prefix": "192.168.100.0/27",
+                "subnet1Prefix": "192.168.100.0/25",
                 "gatewaySubnetPrefix": "192.168.100.128/27",
-                "bastionSubnetPrefix": "192.168.100.192/26",
                 "asn": "65002"
             }
-
         },
-        "Azure": {
-            "type": "object",
-            "defaultValue": {
-                "hubName": "Az-Hub",
+        "azure": {
+            "value": {
+                "hubName": "Az-Hub1",
                 "addressSpacePrefix": "10.0.0.0/24",
                 "subnetName": "subnet1",
                 "subnet1Prefix": "10.0.0.0/27",
                 "gatewaySubnetPrefix": "10.0.0.32/27",
                 "AzureFirewallPrefix": "10.0.0.64/26",
                 "rssubnetPrefix": "10.0.0.128/27",
-                "bastionSubnetPrefix": "10.0.0.192/26",
                 "spoke1Name": "Az-Spk1",
                 "spoke1AddressSpacePrefix": "10.0.1.0/24",
                 "spoke1Subnet1Prefix": "10.0.1.0/27",
