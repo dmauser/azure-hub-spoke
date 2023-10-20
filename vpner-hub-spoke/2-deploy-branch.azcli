@@ -62,6 +62,28 @@ az vm create -n branch-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard -
 #az network vnet subnet create -g $rg --vnet-name branch -n subnet2 --address-prefixes $subnet2  --output none
 #az vm create -n branch-vm2  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet subnet2 --vnet-name branch --admin-username $username --admin-password $password --nsg "" --no-wait
 
+# Indirect VNET connected to the Branch VNET (CONVERT to Subnet)
+# az network vnet create --address-prefixes 10.3.0.0/24 -n extbranch -g $rg -l $region --subnet-name main --subnet-prefixes 10.3.0.0/27 --output none
+# Create VM
+az vm create -n extbranch1VM  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet extended --vnet-name branch  --admin-username $username --admin-password $password --nsg "" --no-wait
+# VNET Peering between ext-branch and branch
+#az network vnet peering create -g $rg -n branch-to-extbranch --vnet-name branch --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n extbranch --query id --out tsv) --output none
+#az network vnet peering create -g $rg -n extbranch-to-branch --vnet-name extbranch --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n branch  --query id --out tsv) --output none
+# UDR to reach Azure
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+## Creating UDR + Disable BGP Propagation
+az network route-table create --name RT-to-extbranch-NVA  --resource-group $rg --location $region --disable-bgp-route-propagation true --output none
+## Default route to NVA
+az network route-table route create --resource-group $rg --name default --route-table-name RT-to-extbranch-NVA \
+--address-prefix 0.0.0.0/0 \
+--next-hop-type VirtualAppliance \
+--next-hop-ip-address $nvatrustedip \
+--output none
+## Associated RT-Hub-to-NVA to Spoke 5 and 6.
+az network vnet subnet update -n main -g $rg --vnet-name extbranch --route-table RT-to-extbranch-NVA --output none
+
+
+
 # UDR to reach Azure
 nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
 ## Creating UDR + Disable BGP Propagation
@@ -80,13 +102,13 @@ az network express-route create --bandwidth 50 -n $ername2 --peering-location "$
 
 echo Associating NSG on Spokes and Branch VNETs
 #Updating NSGs:
-az network nsg create --resource-group $rg --name default-nsg-$region --location $region -o none
+az network nsg create --resource-group $rg --name $region-default-nsg --location $region -o none
 # Adding my home public IP to NSG for SSH access
-az network nsg rule create -g $rg --nsg-name default-nsg-$region -n 'default-allow-ssh' --direction Inbound --priority 100 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 22 --access Allow --protocol Tcp --description "Allow inbound SSH" --output none
-az network nsg rule create -g $rg --nsg-name default-nsg-$region -n 'default-allow-https' --direction Inbound --priority 110 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
-az network nsg rule create -g $rg --nsg-name default-nsg-$region -n 'default-allow-vnetoutany' --direction Inbound --priority 120 --source-address-prefixes VirtualNetwork --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*' --access Allow --protocol '*' --description "Allow inbound VNET to Any for NVA Routing out" --output none
+az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-ssh' --direction Inbound --priority 300 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 22 --access Allow --protocol Tcp --description "Allow inbound SSH" --output none
+az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
+az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-vnetoutany' --direction Inbound --priority 320 --source-address-prefixes VirtualNetwork --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*' --access Allow --protocol '*' --description "Allow inbound VNET to Any for NVA Routing out" --output none
 # Associating NSG to the VNET subnets (Spokes and Branches)
-az network vnet subnet update --id $(az network vnet list -g $rg --query '[?contains(location,`'$region'`)].{id:subnets[0].id}' -o tsv) --network-security-group default-nsg-$region -o none
+az network vnet subnet update --name main --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
 
 #Create ExpressRoute Gateway
 echo Creating Branch ExpressRoute Gateway
@@ -132,15 +154,15 @@ done
 #echo Checking OPNSense provisioning state:
 # az deployment group show --name branch-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
 # Misc remove NSG from OPNSense NICs 
-az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group "" --output none
-az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group "" --output none
+az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group null --output none
 # Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
 # az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name branch --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
-# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name branch --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group default-nsg-$region -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name branch --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $region-default-nsg -o none
 az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name branch --network-security-group ""  -o none
 az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name branch --network-security-group ""  -o none
-az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name branch --network-security-group default-nsg-$region -o none
-az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name branch --network-security-group default-nsg-$region -o none
+az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
+az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
 echo Deployment has finished
 
 

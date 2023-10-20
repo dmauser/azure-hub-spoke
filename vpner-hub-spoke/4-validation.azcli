@@ -1,0 +1,64 @@
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+
+# Create UDR with disable GatewayPropagation to branch
+az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
+# Add default to branch-forcevpn-udr to openvpn trusted interface
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
+# Associate to subnet1 on branch vnet
+az network vnet subnet update -g $rg -n main --vnet-name branch --route-table branch-forcevpn-udr -none
+
+# **** Azure Route Server ****
+# RS instance IPs
+rsname=$(az network routeserver list --resource-group $rg --query "[].name" -o tsv | grep Az-Hub1-routeserver)
+echo Router Server name $rsname: && \
+echo Route Server IPs: && \
+az network routeserver show --name $rsname --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+
+# Update Azure Route Server routing preference:
+echo Updating Azure Route Server routing preference
+hubroutingpreference=VpnGateway #(ASPath, ExpressRoute, VpnGateway)
+az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubroutingpreference -o none
+
+# Azure Route Server config:
+echo Azure Route Server config:
+az network routeserver show --name $rsname --resource-group $rg
+# Get Azure Route Server routing preference using restapi 
+subid=$(az account show --query id -o tsv)
+echo Get Azure Route Server using restapi
+az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
+--query properties.hubRoutingPreference -o tsv
+
+# Get az-hub1-vm1 effective route table
+echo Get az-hub1-vm1 effective route table
+az network nic show-effective-route-table -g $rg -n Az-Hub1-lxvm-nic -o table | grep VirtualNetworkGateway
+
+# Get branch-rs ips
+echo Get branch-rs ips
+az network routeserver show --name branch-rs --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+
+# Get az-hub1-ergw bgp peers
+echo Get az-hub1-ergw bgp peers
+az network vnet-gateway list-bgp-peer-status --name az-hub1-ergw --resource-group $rg -o table
+# Get az-hub1-ergw ExpressRoute Gateway learned routes
+echo Get az-hub1-ergw ExpressRoute Gateway learned routes
+az network vnet-gateway list-learned-routes --name az-hub1-ergw --resource-group $rg -o table
+
+# Get branch-ergw bgp peers
+echo Get branch-ergw bgp peers
+az network vnet-gateway list-bgp-peer-status --name branch-ergw --resource-group $rg -o table
+# Get branch-ergw ExpressRoute Gateway learned routes
+echo Get branch-ergw ExpressRoute Gateway learned routes
+az network vnet-gateway list-learned-routes --name branch-ergw --resource-group $rg -o table
+# Get branch-ergw ExpressRoute Gateway advertised routes
+echo Get branch-ergw ExpressRoute Gateway advertised routes
+az network vnet-gateway list-advertised-routes --name branch-ergw --resource-group $rg --peer 10.100.0.36 -o table 
+
+# Get az-hub1-vpngw bgp peers
+echo Get az-hub1-vpngw bgp peers
+az network vnet-gateway list-bgp-peer-status --name az-hub1-vpngw --resource-group $rg -o table
+# Get az-hub1-vpngw learned routes
+echo Get az-hub1-vpngw learned routes
+az network vnet-gateway list-learned-routes --name az-hub1-vpngw --resource-group $rg -o table
