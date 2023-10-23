@@ -40,7 +40,7 @@ echo "Deploying OPNsense NVA1 on the branch"
 az vm image terms accept --urn thefreebsdfoundation:freebsd-13_0:13_0-release:13.0.0 -o none
 az deployment group create --name branch-nva-$RANDOM --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
---parameters scenarioOption=$scenarioOption virtualMachineName=$virtualMachineName virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$region \
+--parameters OpnScriptURI=$OpnScriptURI scenarioOption=$scenarioOption virtualMachineName=$virtualMachineName virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$region \
 --no-wait
 
 sleep 5
@@ -107,6 +107,31 @@ az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-all
 az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-vnetoutany' --direction Inbound --priority 320 --source-address-prefixes VirtualNetwork --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*' --access Allow --protocol '*' --description "Allow inbound VNET to Any for NVA Routing out" --output none
 # Associating NSG to the VNET subnets (Spokes and Branches)
 az network vnet subnet update --name main --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
+
+# Create routeserversubnet on the branch vnet
+az network vnet subnet create -n routeserversubnet -g $rg --vnet-name branch --address-prefixes 10.100.0.128/27 --output none
+# Create routeserver public ip
+az network public-ip create -n branch-rs-pip -g $rg --location $region --sku Standard --output none --zone 1 2 3
+
+# get routeserversubnet resourceID
+routeserversubnetid=$(az network vnet subnet show -n routeserversubnet -g $rg --vnet-name branch --query id --out tsv)
+# Add Azure Route server
+echo Adding Azure Route Server
+az network routeserver create --name branch-rs --resource-group $rg --location $region --hosted-subnet $routeserversubnetid --output none --public-ip-address branch-rs-pip
+
+# BGP peer OPNSense Trusted NIC with Azure Route Server
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+echo BGP peer OPNSense Trusted NIC with Azure Route Server
+az network routeserver peering create --name opnnva1-rs-peer --resource-group $rg --routeserver branch-rs --peer-asn 65510 --peer-ip $nvatrustedip --no-wait
+
+# Enable branch to branch on route server
+echo Enable branch to branch on route server
+az network routeserver update 
+
+# Check when peering is established
+echo Check when peering is established
+while [ $(az network routeserver peering show --name opnnva1-rs-peer --resource-group $rg --routeserver branch-rs --query provisioningState -o tsv) != "Succeeded" ]; do echo "Waiting for peering to be established..." && sleep 5; done
+
 
 #Create ExpressRoute Gateway
 echo Creating Branch ExpressRoute Gateway
