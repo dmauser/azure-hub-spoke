@@ -15,6 +15,17 @@ az deployment group create --name Hub1-$region --resource-group $rg \
 --parameters VmAdminUsername=$username VmAdminPassword=$password restrict_SSH_VM_AccessByPublicIP=$mypipi \
 --no-wait
 
+# Wait until deployment completes
+while true
+do
+  echo "Checking for deployment completion..."
+  status=$(az deployment group show --name Hub1-$region --resource-group $rg --query properties.provisioningState -o tsv)
+  if [ "$status" = "Succeeded" ]; then
+    echo "Deployment completed!"
+    break
+  fi
+  sleep 10
+done
 
 # Create VPN Gateway:
 vnet=Az-Hub1-vnet
@@ -47,9 +58,7 @@ do
   sleep 10
 done
 
-# Enable Gateway Private IPs
+# Enable Gateway Private IPs and BGP over APIPA:
 az network vnet-gateway update --name $gwname --resource-group $rg --set "enablePrivateIpAddress=true" --no-wait --output none
 az network vnet-gateway update --name $AzurevpngwName-vpngw --resource-group $rg --set bgpSettings.bgpPeeringAddresses[0].customBgpIpAddresses=[\"169.254.21.1\"] --no-wait
 az network vnet-gateway update --name $AzurevpngwName-vpngw --resource-group $rg --set bgpSettings.bgpPeeringAddresses[1].customBgpIpAddresses=[\"169.254.21.2\"] --no-wait
-
-

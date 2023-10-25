@@ -49,7 +49,7 @@
         },
         "onprem": {
             "value": {
-                "name": "OnPrem",
+                "name": "onprem",
                 "addressSpacePrefix": "192.168.100.0/24",
                 "subnet1Prefix": "192.168.100.0/25",
                 "gatewaySubnetPrefix": "192.168.100.128/27",
@@ -58,17 +58,16 @@
         },
         "azure": {
             "value": {
-                "hubName": "Az-Hub1",
+                "hubName": "az-hub",
                 "addressSpacePrefix": "10.0.0.0/24",
                 "subnetName": "subnet1",
                 "subnet1Prefix": "10.0.0.0/27",
                 "gatewaySubnetPrefix": "10.0.0.32/27",
-                "AzureFirewallPrefix": "10.0.0.64/26",
                 "rssubnetPrefix": "10.0.0.128/27",
-                "spoke1Name": "Az-Spk1",
+                "spoke1Name": "az-spk1",
                 "spoke1AddressSpacePrefix": "10.0.1.0/24",
                 "spoke1Subnet1Prefix": "10.0.1.0/27",
-                "spoke2Name": "Az-Spk2",
+                "spoke2Name": "az-spk2",
                 "spoke2AddressSpacePrefix": "10.0.2.0/24",
                 "spoke2Subnet1Prefix": "10.0.2.0/27"
             }
