@@ -10,7 +10,7 @@ mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you ru
 
 az group create --name $rg --location $region
 az deployment group create --name Hub1-$region --resource-group $rg \
---template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv3.json \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv4.json \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpner-hub-spoke/parameters.json \
 --parameters VmAdminUsername=$username VmAdminPassword=$password restrict_SSH_VM_AccessByPublicIP=$mypipi \
 --no-wait
