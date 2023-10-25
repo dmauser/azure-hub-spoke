@@ -12,7 +12,7 @@ az group create --name $rg --location $region
 az deployment group create --name Hub1-$region --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv4.json \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpner-hub-spoke/parameters.json \
---parameters VmAdminUsername=$username VmAdminPassword=$password restrict_SSH_VM_AccessByPublicIP=$mypip \
+--parameters VmAdminUsername=$username VmAdminPassword=$password Restrict_SSH_VM_AccessByPublicIP=$mypip \
 --no-wait
 
 # Wait until deployment completes
