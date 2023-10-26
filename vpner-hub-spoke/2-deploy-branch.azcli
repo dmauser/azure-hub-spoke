@@ -13,7 +13,7 @@ ShellScriptName=configureopnsense.sh
 scenarioOption="TwoNics"
 virtualMachineSize=Standard_DS1_v2
 virtualMachineName=branch-opnnva
-virtualNetworkName=branch
+virtualNetworkName=branch-vnet
 existingvirtualNetwork=new
 VNETAddress=10.100.0.0/24 
 UntrustedSubnetCIDR=10.100.0.0/28
@@ -27,14 +27,11 @@ OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpne
 
 #ExpressRoute specific variables
 ername1="azure-er-circuit" 
-perloc1="Dallas"
+perloc1="Chicago"
 providerloc1=Megaport
 ername2="branch-er-circuit"
-perloc2="Dallas"
+perloc2="Chicago"
 providerloc2=Megaport
-
-# Creating rg
-az group create -n $rg -l $region --output none
 
 echo "Deploying OPNsense NVA1 on the branch"
 az vm image terms accept --urn thefreebsdfoundation:freebsd-13_0:13_0-release:13.0.0 -o none
@@ -48,50 +45,16 @@ echo Checking Branch VNET provisioning state
 prState=''
 while [[ $prState != 'Succeeded' ]];
 do
-    prState=$(az network vnet show -n branch -g $rg  --query 'provisioningState' -o tsv)
+    prState=$(az network vnet show -n $virtualNetworkName -g $rg  --query 'provisioningState' -o tsv)
     echo "Branch VNET provisioning state provisioningState="$prState
     sleep 5
 done
+
 echo Creating Branch VMs...
-# Depoly On-premises VM:
+# Deploy branch VM:
 # Subnet1
-az network vnet subnet create -g $rg --vnet-name branch -n main --address-prefixes $subnet1  --output none
-az vm create -n branch-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet main --vnet-name branch --admin-username $username --admin-password $password --nsg "" --no-wait
-
-# Subnet2
-#az network vnet subnet create -g $rg --vnet-name branch -n subnet2 --address-prefixes $subnet2  --output none
-#az vm create -n branch-vm2  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet subnet2 --vnet-name branch --admin-username $username --admin-password $password --nsg "" --no-wait
-
-# Indirect VNET connected to the Branch VNET (CONVERT to Subnet)
-# az network vnet create --address-prefixes 10.3.0.0/24 -n extbranch -g $rg -l $region --subnet-name main --subnet-prefixes 10.3.0.0/27 --output none
-# Create VM
-az vm create -n extbranch1VM  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet extended --vnet-name branch  --admin-username $username --admin-password $password --nsg "" --no-wait
-# VNET Peering between ext-branch and branch
-#az network vnet peering create -g $rg -n branch-to-extbranch --vnet-name branch --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n extbranch --query id --out tsv) --output none
-#az network vnet peering create -g $rg -n extbranch-to-branch --vnet-name extbranch --allow-vnet-access --allow-forwarded-traffic --remote-vnet $(az network vnet show -g $rg -n branch  --query id --out tsv) --output none
-# UDR to reach Azure
-nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
-## Creating UDR + Disable BGP Propagation
-az network route-table create --name RT-to-extbranch-NVA  --resource-group $rg --location $region --disable-bgp-route-propagation true --output none
-## Default route to NVA
-az network route-table route create --resource-group $rg --name default --route-table-name RT-to-extbranch-NVA \
---address-prefix 0.0.0.0/0 \
---next-hop-type VirtualAppliance \
---next-hop-ip-address $nvatrustedip \
---output none
-## Associated RT-Hub-to-NVA to Spoke 5 and 6.
-az network vnet subnet update -n main -g $rg --vnet-name extbranch --route-table RT-to-extbranch-NVA --output none
-
-# UDR to reach Azure
-nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
-## Creating UDR + Disable BGP Propagation
-az network route-table create --name RT-to-extbranch-NVA  --resource-group $rg --location $region --disable-bgp-route-propagation true --output none
-## Default route to NVA
-az network route-table route create --resource-group $rg --name default --route-table-name RT-to-extbranch-NVA \
---address-prefix 0.0.0.0/0 \
---next-hop-type VirtualAppliance \
---next-hop-ip-address $nvatrustedip \
---output none
+az network vnet subnet create -g $rg --vnet-name $virtualNetworkName -n subnet1 --address-prefixes $subnet1  --output none
+az vm create -n branch-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet subnet1 --vnet-name $virtualNetworkName --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
 
 #Create ER circuits
 echo Creating ExpressRoute Circuits
@@ -106,46 +69,37 @@ az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-all
 az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
 az network nsg rule create -g $rg --nsg-name $region-default-nsg -n 'default-allow-vnetoutany' --direction Inbound --priority 320 --source-address-prefixes VirtualNetwork --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*' --access Allow --protocol '*' --description "Allow inbound VNET to Any for NVA Routing out" --output none
 # Associating NSG to the VNET subnets (Spokes and Branches)
-az network vnet subnet update --name main --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $region-default-nsg -o none
 
 #Create ExpressRoute Gateway
 echo Creating Branch ExpressRoute Gateway
-az network vnet subnet create --address-prefix $GatewaySubnet --name GatewaySubnet -g $rg --vnet-name branch --output none
+az network vnet subnet create --address-prefix $GatewaySubnet --name GatewaySubnet -g $rg --vnet-name $virtualNetworkName --output none
 az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none
 az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet branch --gateway-type "ExpressRoute" --sku "Standard" --no-wait
-echo Validating ER Gateways provisioning...
 
-#Branches VPN Gateways provisioning status
-prState=$(az network vnet-gateway show -g $rg -n branch-ergw --query provisioningState -o tsv)
-if [[ $prState == 'Failed' ]];
-then
-    echo ER Gateway is in fail state. Deleting and rebuilding.
-    az network vnet-gateway delete -n branch-ergw -g $rg
-    az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet branch --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "Branch ER Gateway provisioning state provisioningState="$prState
     sleep 5
-else
-    prState=''
-    while [[ $prState != 'Succeeded' ]];
-    do
-        prState=$(az network vnet-gateway show -g $rg -n branch-ergw --query provisioningState -o tsv)
-        echo "branch-ergw provisioningState="$prState
-        sleep 5
-    done
-fi
+done
 
 echo Adjusting OPNsense NSGs
 echo Checking subnet status...
 prState=''
 while [[ $prState != 'Succeeded' ]];
 do
-    prState=$(az network vnet subnet show --name Trusted-Subnet -g $rg --vnet-name branch --query provisioningState -o tsv)
+    prState=$(az network vnet subnet show --name Trusted-Subnet -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
     echo Trusted subnet "provisioningState="$prState
     sleep 5
 done
 prState=''
 while [[ $prState != 'Succeeded' ]];
 do
-    prState=$(az network vnet subnet show --name Untrusted-Subnet -g $rg --vnet-name branch --query provisioningState -o tsv)
+    prState=$(az network vnet subnet show --name Untrusted-Subnet -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
     echo Unrusted subnet "provisioningState="$prState
     sleep 5
 done
@@ -155,14 +109,12 @@ done
 az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group null --output none
 az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group null --output none
 # Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
-# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name branch --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
-# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name branch --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $region-default-nsg -o none
-az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name branch --network-security-group ""  -o none
-az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name branch --network-security-group ""  -o none
-az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
-az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name branch --network-security-group $region-default-nsg -o none
-echo Deployment has finished
-
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $region-default-nsg -o none
+az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $region-default-nsg -o none
+az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $region-default-nsg -o none
 
 ### Installing tools for networking connectivity validation such as traceroute, tcptraceroute, iperf and others (check link below for more details) 
 echo "Installing net utilities inside VMs (traceroute, tcptraceroute, iperf3, hping3, and others)"
@@ -181,3 +133,4 @@ done
 #Enabling boot diagnostics for all VMs in the resource group (Serial console)
 echo Enabling boot diagnostics
 az vm boot-diagnostics enable --ids $(az vm list -g $rg --query '[].{id:id}' -o tsv) -o none
+echo Deployment has finished

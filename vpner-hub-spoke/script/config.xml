@@ -1086,7 +1086,7 @@
         <routerid/>
         <graceful>0</graceful>
         <networkimportcheck>1</networkimportcheck>
-        <networks>10.3.0.0/24,10.0.0.0/8</networks>
+        <networks>10.100.0.0/24,10.0.0.0/8</networks>
         <redistribute/>
         <neighbors>
           <neighbor uuid="92141aa5-3f7c-4bba-8efe-ed130e3e84f5">
