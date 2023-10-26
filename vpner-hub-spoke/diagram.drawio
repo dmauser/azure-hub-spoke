@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="NDvJAJGpe4w62B9Y8Wvt" name="Page-1">
-        <mxGraphModel dx="1604" dy="670" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="1479" dy="541" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -160,14 +160,14 @@
                 <mxCell id="102" style="edgeStyle=none;html=1;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;opacity=50;dashed=1;" edge="1" parent="1" source="101" target="23">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="101" value="Azure Route Server&lt;br&gt;AS 65515&lt;br&gt;10.0.0.132&lt;br&gt;10.0.0.0133" style="text;strokeColor=default;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;dashed=1;opacity=50;" vertex="1" parent="1">
-                    <mxGeometry x="70" y="231" width="129" height="64" as="geometry"/>
+                <mxCell id="101" value="Azure Route Server&lt;br&gt;AS 65515&lt;br&gt;10.0.0.132&lt;br&gt;10.0.0.0133&lt;br&gt;Control Route Preference: ER, VPN, AS-path" style="text;strokeColor=default;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;dashed=1;opacity=50;" vertex="1" parent="1">
+                    <mxGeometry x="47" y="198" width="152" height="97" as="geometry"/>
                 </mxCell>
                 <mxCell id="109" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;strokeColor=#000000;opacity=50;dashed=1;" edge="1" parent="1" source="103" target="22">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="103" value="VPN Gateway&lt;br&gt;AS 65515&lt;br&gt;INT0 Private IP: 10.0.0.36&lt;br&gt;INT1 Private IP: 10.0.0.37&lt;br&gt;INT0 BGP IP:&amp;nbsp;&amp;nbsp;169.254.21.1&lt;br&gt;INT1 BGP IP:&amp;nbsp;169.254.21.2" style="text;strokeColor=default;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;dashed=1;opacity=50;" vertex="1" parent="1">
-                    <mxGeometry x="42" y="355.81000000000006" width="160" height="91.46" as="geometry"/>
+                    <mxGeometry x="42" y="346" width="160" height="101.27" as="geometry"/>
                 </mxCell>
                 <mxCell id="108" style="edgeStyle=none;html=1;entryX=0.923;entryY=0.634;entryDx=0;entryDy=0;entryPerimeter=0;strokeColor=#000000;opacity=50;dashed=1;" edge="1" parent="1" source="104" target="16">
                     <mxGeometry relative="1" as="geometry"/>
@@ -178,14 +178,14 @@
                 <mxCell id="114" value="UDR when forcing traffic over VPN only" style="text;strokeColor=default;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;dashed=1;opacity=50;" vertex="1" parent="1">
                     <mxGeometry x="590" y="687.5" width="227" height="28" as="geometry"/>
                 </mxCell>
-                <mxCell id="115" value="BGP" parent="0"/>
+                <mxCell id="115" value="BGP" parent="0" visible="0"/>
                 <mxCell id="116" style="edgeStyle=none;html=1;dashed=1;strokeColor=#FF8000;opacity=50;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=-0.102;entryY=0.161;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="115" source="117">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="345.16750000000025" y="546.44" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="117" value="&lt;span style=&quot;font-family: Verdana; font-size: 12px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-align: center; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; background-color: rgb(251, 251, 251); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial; float: none; display: inline !important;&quot;&gt;On-premsies BGP Advertisement&lt;br&gt;10.100.0.0/24 - via ER and VPN&lt;br&gt;&lt;b&gt;10.100.0.4/32 - via ER only&lt;/b&gt;&lt;br&gt;&lt;/span&gt;" style="text;whiteSpace=wrap;html=1;fontSize=10;fontFamily=Verdana;fontColor=#FF8000;strokeColor=#FF8000;dashed=1;" vertex="1" parent="115">
-                    <mxGeometry x="99" y="588" width="207" height="55" as="geometry"/>
+                <mxCell id="117" value="&lt;span style=&quot;font-family: Verdana; font-size: 12px; font-style: normal; font-variant-ligatures: normal; font-variant-caps: normal; letter-spacing: normal; orphans: 2; text-align: center; text-indent: 0px; text-transform: none; widows: 2; word-spacing: 0px; -webkit-text-stroke-width: 0px; background-color: rgb(251, 251, 251); text-decoration-thickness: initial; text-decoration-style: initial; text-decoration-color: initial; float: none; display: inline !important;&quot;&gt;On-premsies BGP Advertisement&lt;br&gt;10.100.0.0/24 - via ER and VPN&lt;br&gt;&lt;b&gt;10.100.0.4/32 - via ER only&lt;br&gt;&lt;/b&gt;10.0.0.0/8 via VPN only.&lt;br&gt;&lt;/span&gt;" style="text;whiteSpace=wrap;html=1;fontSize=10;fontFamily=Verdana;fontColor=#FF8000;strokeColor=#FF8000;dashed=1;" vertex="1" parent="115">
+                    <mxGeometry x="104" y="573" width="207" height="66" as="geometry"/>
                 </mxCell>
                 <mxCell id="118" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;dashed=1;strokeColor=#FF3333;fontColor=#FF3333;opacity=50;" edge="1" parent="115" source="119">
                     <mxGeometry relative="1" as="geometry">
