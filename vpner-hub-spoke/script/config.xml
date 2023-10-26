@@ -1273,15 +1273,21 @@
   </gateways>
   <vlans version="1.0.0"/>
   <staticroutes version="1.0.0">
-    <route uuid="63ec64c1-4178-47da-bc9b-d2c3e53552c6">
-      <network>10.3.0.0/24</network>
+    <route uuid="e6d717e9-d481-432c-9749-8d7aa4d16cef">
+      <network>10.0.0.0/8</network>
       <gateway>LAN_GW</gateway>
       <descr/>
       <disabled>0</disabled>
     </route>
-    <route uuid="e6d717e9-d481-432c-9749-8d7aa4d16cef">
-      <network>10.0.0.0/8</network>
-      <gateway>LAN_GW</gateway>
+    <route uuid="a3a55932-81a6-4dc5-b83f-050ed0163195">
+      <network>10.0.0.36/32</network>
+      <gateway>WAN_DHCP</gateway>
+      <descr/>
+      <disabled>0</disabled>
+    </route>
+    <route uuid="50554202-6d72-439a-a880-c28d15446356">
+      <network>10.0.0.37/32</network>
+      <gateway>WAN_DHCP</gateway>
       <descr/>
       <disabled>0</disabled>
     </route>

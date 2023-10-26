@@ -6,10 +6,10 @@ branchName=branch
 sharedkey=abc123
 #ExpressRoute specific variables
 ername1="azure-er-circuit" 
-perloc1="Dallas"
+perloc1="Chicago"
 providerloc1=Megaport
 ername2="branch-er-circuit"
-perloc2="Dallas"
+perloc2="Chicago"
 providerloc2=Megaport
 
 # Validate if both ername1 and ername2 have provider provisioned status
