@@ -1,7 +1,7 @@
 #Parameters
 region=southcentralus
 rg=lab-hs-vpner
-AzurehubName=az-hub1
+AzurehubName=az-hub
 branchName=branch
 sharedkey=abc123
 #ExpressRoute specific variables
@@ -57,6 +57,7 @@ az network vpn-connection create --name $AzurehubName-to-$branchName-conn \
 --local-gateway2 $branchName-lgw \
 --enable-bgp \
 --output none &>/dev/null &
+
 sleep 5
 echo "Waiting for VPN connection to be in Connected state..."
 while [ $(az network vpn-connection show --name $AzurehubName-to-$branchName-conn --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
@@ -66,4 +67,4 @@ do
 done
 
 # Set connnection to use useLocalAzureIpAddress=true
-az network vpn-connection update --name $AzurehubName-to-$branchName-conn -g $rg --set "useLocalAzureIpAddress=true" --output none
+az network vpn-connection update --name $AzurehubName-to-$branchName-conn -g $rg --set "useLocalAzureIpAddress=true" --output none --no-wait

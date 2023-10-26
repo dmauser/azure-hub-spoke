@@ -1,30 +1,72 @@
-#Parameters
-region=southcentralus
-rg=lab-hs-vpner
+# Build Megaport add static route for advertisement.
+# Build ER - Test connectivity
+# Build VPN - Test connectivity
+# Change RS to VPN and test connectvitity
 
+#Parameters
+rg=lab-hs-vpner
+region=$(az group show -n $rg --query location -o tsv)
+virtualNetworkName=branch-vnet
+
+# Review Azure Route Server configuration:
+# **** Azure Route Server ****
+# RS instance IPs
+rsname=$(az network routeserver list --resource-group $rg --query "[].name" -o tsv | grep az-hub-rs)
+echo Router Server name $rsname: && \
+echo Route Server IPs: && \
+az network routeserver show --name $rsname --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+
+# Review Az-Hub ExpressRoute Gateway BGP peers and learned routes
+ergwname=$(az network vnet-gateway list --resource-group $rg --query "[].name" -o tsv | grep az-hub-ergw)
+echo ExpressRoute Gateway name $ergwname: && \
+echo ExpressRoute Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $ergwname --resource-group $rg -o table && \
+echo ExpressRoute Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $ergwname --resource-group $rg -o table
+
+# Review Az-Hub VPN Gateway BGP peers and learned routes
+vpngwname=$(az network vnet-gateway list --resource-group $rg --query "[].name" -o tsv | grep az-hub-vpngw)
+echo VPN Gateway name $vpngwname: && \
+echo VPN Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $vpngwname --resource-group $rg -o table && \
+echo VPN Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $vpngwname --resource-group $rg -o table
+
+# Validating current routing preference.
+echo Validating current routing preference.
+# Get Azure Route Server routing preference using restapi 
+subid=$(az account show --query id -o tsv)
+echo Get Azure Route Server using restapi
+az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
+--query properties.hubRoutingPreference -o tsv
+
+# List all az-hub vms in the resource group
+echo List all azure vms in the resource group
+az vm list -g $rg --query "[?contains(name,'az-')].{Name:name,PowerState:powerState}" -o table
+
+# For each VM in Azure Review the current effective route table
+echo For each VM in Azure Review the current effective route table
+for vm in $(az vm list -g $rg --query "[?contains(name,'az-')].name" -o tsv); do
+    echo $vm
+    az network nic show-effective-route-table -g $rg -n $vm-nic -o table | grep VirtualNetworkGateway
+done
+
+# Forcing traffic from branch 10.100.0.0/24 to go over VPN
+
+# 1) Force VM traffic to go over OPNSense NVA using UDR
 # Create UDR with disable GatewayPropagation to branch
 az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
 # Add default to branch-forcevpn-udr to openvpn trusted interface
 nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
 # Associate to subnet1 on branch vnet
-az network vnet subnet update -g $rg -n main --vnet-name branch --route-table branch-forcevpn-udr -none
-
-# **** Azure Route Server ****
-# RS instance IPs
-rsname=$(az network routeserver list --resource-group $rg --query "[].name" -o tsv | grep Az-Hub1-routeserver)
-echo Router Server name $rsname: && \
-echo Route Server IPs: && \
-az network routeserver show --name $rsname --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+az network vnet subnet update -g $rg -n main --vnet-name $virtualNetworkName --route-table branch-forcevpn-udr -none
 
 # Update Azure Route Server routing preference:
 echo Updating Azure Route Server routing preference
 hubroutingpreference=VpnGateway #(ASPath, ExpressRoute, VpnGateway)
 az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubroutingpreference -o none
 
-# Azure Route Server config:
-echo Azure Route Server config:
-az network routeserver show --name $rsname --resource-group $rg
 # Get Azure Route Server routing preference using restapi 
 subid=$(az account show --query id -o tsv)
 echo Get Azure Route Server using restapi
