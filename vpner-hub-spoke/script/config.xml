@@ -1306,7 +1306,7 @@
       <hash-algorithm>sha256</hash-algorithm>
       <noinstallpolicy>1</noinstallpolicy>
       <private-key/>
-      <remote-gateway>192.168.1.4</remote-gateway>
+      <remote-gateway>10.0.0.36</remote-gateway>
     </phase1>
     <phase1>
       <iketype>ikev2</iketype>
@@ -1326,7 +1326,7 @@
       <hash-algorithm>sha256</hash-algorithm>
       <noinstallpolicy>1</noinstallpolicy>
       <private-key/>
-      <remote-gateway>192.168.1.5</remote-gateway>
+      <remote-gateway>10.0.0.37</remote-gateway>
       <ikeid>2</ikeid>
     </phase1>
     <phase2>

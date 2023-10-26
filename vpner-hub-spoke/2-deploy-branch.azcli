@@ -23,7 +23,7 @@ subnet1=10.100.0.96/27
 subnet2=10.100.0.160/27
 existingUntrustedSubnetName=untrusted
 existingTrustedSubnetName=trusted
-OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/vpn-over-er/opnsense/
+OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpner-hub-spoke/script/
 
 #ExpressRoute specific variables
 ername1="azure-er-circuit" 
