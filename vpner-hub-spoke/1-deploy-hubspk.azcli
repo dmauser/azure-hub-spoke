@@ -9,27 +9,27 @@ vmsize=Standard_DS1_v2 #VM Size
 mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
 
 az group create --name $rg --location $region
-az deployment group create --name Hub1-$region --resource-group $rg \
+az deployment group create --name hub-$region --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv4.json \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpner-hub-spoke/parameters.json \
 --parameters VmAdminUsername=$username VmAdminPassword=$password Restrict_SSH_VM_AccessByPublicIP=$mypip \
 --no-wait
 
-# Wait until deployment completes
+# Wait until GatewaySubnet is created on az-hub-vnet:
 while true
 do
-  echo "Checking for deployment completion..."
-  status=$(az deployment group show --name Hub1-$region --resource-group $rg --query properties.provisioningState -o tsv)
+  echo "Checking for GatewaySubnet creation..."
+  status=$(az network vnet subnet show --name GatewaySubnet --vnet-name az-hub-vnet --resource-group $rg --query provisioningState -o tsv)
   if [ "$status" = "Succeeded" ]; then
-    echo "Deployment completed!"
+    echo "GatewaySubnet created!"
     break
   fi
   sleep 10
 done
 
 # Create VPN Gateway:
-vnet=Az-Hub1-vnet
-gwname=Az-Hub1-vpngw
+vnet=az-hub-vnet
+gwname=az-hub-vpngw
 gwsize=VpnGw1AZ
 asn=65515
 
@@ -59,6 +59,18 @@ do
 done
 
 # Enable Gateway Private IPs and BGP over APIPA:
-az network vnet-gateway update --name $gwname --resource-group $rg --set "enablePrivateIpAddress=true" --no-wait --output none
-az network vnet-gateway update --name $AzurevpngwName-vpngw --resource-group $rg --set bgpSettings.bgpPeeringAddresses[0].customBgpIpAddresses=[\"169.254.21.1\"] --no-wait
-az network vnet-gateway update --name $AzurevpngwName-vpngw --resource-group $rg --set bgpSettings.bgpPeeringAddresses[1].customBgpIpAddresses=[\"169.254.21.2\"] --no-wait
+az network vnet-gateway update --name $gwname --resource-group $rg --set enablePrivateIpAddress=true bgpSettings.bgpPeeringAddresses[0].customBgpIpAddresses=[\"169.254.21.1\"] bgpSettings.bgpPeeringAddresses[1].customBgpIpAddresses=[\"169.254.21.2\"] --no-wait
+
+# Loop script to check for completion of VPN GW creation:
+while true
+do
+  echo "Checking for VPN GW update status..."
+  status=$(az network vnet-gateway show --name $gwname --resource-group $rg --query provisioningState -o tsv)
+  if [ "$status" = "Succeeded" ]; then
+    echo "VPN GW update completed!"
+    break
+  fi
+  sleep 10
+done
+
+
