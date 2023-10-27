@@ -1,14 +1,8 @@
-# Build Megaport add static route for advertisement.
-# Build ER - Test connectivity
-# Build VPN - Test connectivity
-# Change RS to VPN and test connectvitity
-
 #Parameters
 rg=lab-hs-vpner
 region=$(az group show -n $rg --query location -o tsv)
 virtualNetworkName=branch-vnet
 mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
-
 
 # Review Azure Route Server configuration:
 # **** Azure Route Server ****
@@ -51,11 +45,7 @@ done
 
 # Test connectivity from Azure VMs to Branch (vice versa).
 # Example: branch-vm ping az-hub-lxvm (10.0.0.4), az-spk1-lxvm (10.0.1.4), az-spk2-lxvm (10.0.2.4)
-
-
 # Example: from one of the Azure VMs az-hub-lxvm, az-spk1-lxvm, az-spk2-lxvm ping branch-vm (10.100.0.100)
-
-
 # Forcing traffic from branch 10.100.0.0/24 to go over VPN
 
 # Ensure On-premises is adverising VPN exrernal interface (for this lab OPNSense WAN/Untrusted interface 10.100.0.4)
