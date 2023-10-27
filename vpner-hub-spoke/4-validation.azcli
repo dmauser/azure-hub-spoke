@@ -7,6 +7,8 @@
 rg=lab-hs-vpner
 region=$(az group show -n $rg --query location -o tsv)
 virtualNetworkName=branch-vnet
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
 
 # Review Azure Route Server configuration:
 # **** Azure Route Server ****
@@ -36,13 +38,9 @@ az network vnet-gateway list-learned-routes --name $vpngwname --resource-group $
 echo Validating current routing preference.
 # Get Azure Route Server routing preference using restapi 
 subid=$(az account show --query id -o tsv)
-echo Get Azure Route Server using restapi
+echo Getting Azure Route Server Hub Preference using restapi
 az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
 --query properties.hubRoutingPreference -o tsv
-
-# List all az-hub vms in the resource group
-echo List all azure vms in the resource group
-az vm list -g $rg --query "[?contains(name,'az-')].{Name:name,PowerState:powerState}" -o table
 
 # For each VM in Azure Review the current effective route table
 echo For each VM in Azure Review the current effective route table
@@ -51,7 +49,17 @@ for vm in $(az vm list -g $rg --query "[?contains(name,'az-')].name" -o tsv); do
     az network nic show-effective-route-table -g $rg -n $vm-nic -o table | grep VirtualNetworkGateway
 done
 
+# Test connectivity from Azure VMs to Branch (vice versa).
+# Example: branch-vm ping az-hub-lxvm (10.0.0.4), az-spk1-lxvm (10.0.1.4), az-spk2-lxvm (10.0.2.4)
+
+
+# Example: from one of the Azure VMs az-hub-lxvm, az-spk1-lxvm, az-spk2-lxvm ping branch-vm (10.100.0.100)
+
+
 # Forcing traffic from branch 10.100.0.0/24 to go over VPN
+
+# Ensure On-premises is adverising VPN exrernal interface (for this lab OPNSense WAN/Untrusted interface 10.100.0.4)
+az network nic show --name branch-opnnva-Untrusted-NIC --resource-group $rg --query ipConfigurations[].privateIPAddress -o tsv
 
 # 1) Force VM traffic to go over OPNSense NVA using UDR
 # Create UDR with disable GatewayPropagation to branch
@@ -59,8 +67,9 @@ az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-
 # Add default to branch-forcevpn-udr to openvpn trusted interface
 nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
-# Associate to subnet1 on branch vnet
-az network vnet subnet update -g $rg -n main --vnet-name $virtualNetworkName --route-table branch-forcevpn-udr -none
+az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix $mypip/32 --next-hop-type Internet -o none
+# Associate route table to subnet1 on branch vnet
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --route-table branch-forcevpn-udr -o none
 
 # Update Azure Route Server routing preference:
 echo Updating Azure Route Server routing preference
@@ -69,38 +78,95 @@ az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubrou
 
 # Get Azure Route Server routing preference using restapi 
 subid=$(az account show --query id -o tsv)
-echo Get Azure Route Server using restapi
+echo Getting Azure Route Server Hub Preference using restapi
 az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
 --query properties.hubRoutingPreference -o tsv
 
-# Get az-hub1-vm1 effective route table
-echo Get az-hub1-vm1 effective route table
-az network nic show-effective-route-table -g $rg -n Az-Hub1-lxvm-nic -o table | grep VirtualNetworkGateway
+# For each VM in Azure Review the current effective route table
+echo For each VM in Azure Review the current effective route table
+for vmnic in $(az network nic list -g $rg --query "[?contains(name,'vm')].name" -o tsv); do
+    echo $vmnic
+    az network nic show-effective-route-table -g $rg -n $vmnic -o table | grep VirtualNetworkGateway
+done
 
-# Get branch-rs ips
-echo Get branch-rs ips
-az network routeserver show --name branch-rs --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+# Review Az-Hub ExpressRoute Gateway BGP peers and learned routes
+ergwname=$(az network vnet-gateway list --resource-group $rg --query "[].name" -o tsv | grep az-hub-ergw)
+echo ExpressRoute Gateway name $ergwname: && \
+echo ExpressRoute Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $ergwname --resource-group $rg -o table && \
+echo ExpressRoute Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $ergwname --resource-group $rg -o table
 
-# Get az-hub1-ergw bgp peers
-echo Get az-hub1-ergw bgp peers
-az network vnet-gateway list-bgp-peer-status --name az-hub1-ergw --resource-group $rg -o table
-# Get az-hub1-ergw ExpressRoute Gateway learned routes
-echo Get az-hub1-ergw ExpressRoute Gateway learned routes
-az network vnet-gateway list-learned-routes --name az-hub1-ergw --resource-group $rg -o table
+# For each VM in Azure Review the current effective route table
+echo For each VM in Azure Review the current effective route table
+for vmnic in $(az network nic list -g $rg --query "[?contains(name,'vm')].name" -o tsv); do
+    echo $vmnic
+    az network nic show-effective-route-table -g $rg -n $vmnic -o table | grep VirtualNetworkGateway
+done
 
-# Get branch-ergw bgp peers
-echo Get branch-ergw bgp peers
-az network vnet-gateway list-bgp-peer-status --name branch-ergw --resource-group $rg -o table
-# Get branch-ergw ExpressRoute Gateway learned routes
-echo Get branch-ergw ExpressRoute Gateway learned routes
-az network vnet-gateway list-learned-routes --name branch-ergw --resource-group $rg -o table
-# Get branch-ergw ExpressRoute Gateway advertised routes
-echo Get branch-ergw ExpressRoute Gateway advertised routes
-az network vnet-gateway list-advertised-routes --name branch-ergw --resource-group $rg --peer 10.100.0.36 -o table 
+# Review Az-Hub VPN Gateway BGP peers and learned routes
+vpngwname=$(az network vnet-gateway list --resource-group $rg --query "[].name" -o tsv | grep az-hub-vpngw)
+echo VPN Gateway name $vpngwname: && \
+echo VPN Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $vpngwname --resource-group $rg -o table && \
+echo VPN Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $vpngwname --resource-group $rg -o table
 
-# Get az-hub1-vpngw bgp peers
-echo Get az-hub1-vpngw bgp peers
-az network vnet-gateway list-bgp-peer-status --name az-hub1-vpngw --resource-group $rg -o table
-# Get az-hub1-vpngw learned routes
-echo Get az-hub1-vpngw learned routes
-az network vnet-gateway list-learned-routes --name az-hub1-vpngw --resource-group $rg -o table
+# ****** AS Path test *******
+# 1) Enable AS path prepend route map on the opnsense
+
+# 2) Review Az-Hub VPN Gateway BGP peers and learned routes
+vpngwname=$(az network vnet-gateway list --resource-group $rg --query "[].name" -o tsv | grep az-hub-vpngw)
+echo VPN Gateway name $vpngwname: && \
+echo VPN Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $vpngwname --resource-group $rg -o table && \
+echo VPN Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $vpngwname --resource-group $rg -o table
+
+# 3) For each VM in Azure Review the current effective route table
+echo For each VM in Azure Review the current effective route table
+for vmnic in $(az network nic list -g $rg --query "[?contains(name,'vm')].name" -o tsv); do
+    echo $vmnic
+    az network nic show-effective-route-table -g $rg -n $vmnic -o table | grep VirtualNetworkGateway
+done
+
+# 4) Change Azure Route Server preference to ASpath
+# Update Azure Route Server routing preference:
+echo Updating Azure Route Server routing preference
+hubroutingpreference=ASPath #(ASPath, ExpressRoute, VpnGateway)
+az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubroutingpreference -o none
+
+# 5) Get Azure Route Server routing preference using restapi 
+subid=$(az account show --query id -o tsv)
+echo Getting Azure Route Server Hub Preference using restapi
+az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
+--query properties.hubRoutingPreference -o tsv
+
+
+# 6) For each VM in Azure Review the current effective route table
+echo For each VM in Azure Review the current effective route table
+for vmnic in $(az network nic list -g $rg --query "[?contains(name,'vm')].name" -o tsv); do
+    echo $vmnic
+    az network nic show-effective-route-table -g $rg -n $vmnic -o table | grep VirtualNetworkGateway
+done
+
+# Check the behavior.
+
+# Misc
+# Disassociate udr from branch-vm
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --route-table null -o none
+# Associate udr to branch-vm
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --route-table branch-forcevpn-udr -o none
+
+# Reset Azure Route Server routing preference to ExpressRoute
+# Update Azure Route Server routing preference:
+echo Updating Azure Route Server routing preference
+hubroutingpreference=ExpressRoute #(ASPath, ExpressRoute, VpnGateway)
+az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubroutingpreference -o none
+
+# 5) Get Azure Route Server routing preference using restapi 
+subid=$(az account show --query id -o tsv)
+echo Getting Azure Route Server Hub Preference using restapi
+az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Microsoft.Network/virtualHubs/$rsname?api-version=2023-05-01 \
+--query properties.hubRoutingPreference -o tsv
+
