@@ -41,7 +41,18 @@ echo For each VM in Azure Review the current effective route table
 for vm in $(az vm list -g $rg --query "[?contains(name,'az-')].name" -o tsv); do
     echo $vm
     az network nic show-effective-route-table -g $rg -n $vm-nic -o table | grep VirtualNetworkGateway
+done.
+
+# Show effective routes for VMs where source is VirtualNetworkGateway
+echo Show effective routes for VMs where source is VirtualNetworkGateway
+for vm in $(az vm list -g $rg --query "[?contains(name,'az-')].name" -o tsv); do
+    echo $vm
+    az network nic show-effective-route-table -g $rg -n $vm-nic --query "[?contains(source,'VirtualNetworkGateway')].{source:Source,state:State,addressPrefix:AddressPrefix,nextHopType:NextHopType}" -o table
 done
+
+az network nic show-effective-route-table -g $rg -n $vm-nic --query "value[?contains(source,'VirtualNetworkGateway')].{source:Source,state:State,addressPrefix:AddressPrefix,nextHopType:NextHopType}" -o table
+
+az network nic show-effective-route-table -g $rg -n $vm-nic --query "value[?contains(source,'VirtualNetworkGateway')].{Source:source,AddressPrefix:addressPrefix,NextHopType:nextHopType,nextHopIpAddress:nextHopIpAddress}" -o table
 
 # Test connectivity from Azure VMs to Branch (vice versa).
 # Example: branch-vm ping az-hub-lxvm (10.0.0.4), az-spk1-lxvm (10.0.1.4), az-spk2-lxvm (10.0.2.4)
