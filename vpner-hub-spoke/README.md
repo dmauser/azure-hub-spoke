@@ -69,23 +69,26 @@ Here is the diagram showing the connectivity flow, in purple, between Azure VMs 
 
 A ping from az-spk1-lxvm to branch-vm1 has the following output:
 
+
+
 ```bash
+azureuser@az-spk1-lxvm:~$ hostname -I
+10.0.1.4 
 azureuser@az-spk1-lxvm:~$ ping 10.100.0.100 -c 5
 PING 10.100.0.100 (10.100.0.100) 56(84) bytes of data.
-64 bytes from 10.100.0.100: icmp_seq=1 ttl=60 time=69.9 ms
-64 bytes from 10.100.0.100: icmp_seq=2 ttl=60 time=68.7 ms
-64 bytes from 10.100.0.100: icmp_seq=3 ttl=60 time=70.7 ms
-64 bytes from 10.100.0.100: icmp_seq=4 ttl=60 time=69.9 ms
-64 bytes from 10.100.0.100: icmp_seq=5 ttl=60 time=69.0 ms
+64 bytes from 10.100.0.100: icmp_seq=1 ttl=60 time=72.6 ms
+64 bytes from 10.100.0.100: icmp_seq=2 ttl=60 time=72.4 ms
+64 bytes from 10.100.0.100: icmp_seq=3 ttl=60 time=72.1 ms
+64 bytes from 10.100.0.100: icmp_seq=4 ttl=60 time=72.3 ms
+64 bytes from 10.100.0.100: icmp_seq=5 ttl=60 time=71.9 ms
 
 --- 10.100.0.100 ping statistics ---
-5 packets transmitted, 5 received, 0% packet loss, time 4005ms
-rtt min/avg/max/mdev = 68.752/69.712/70.746/0.768 ms
+5 packets transmitted, 5 received, 0% packet loss, time 4006ms
+rtt min/avg/max/mdev = 71.913/72.307/72.678/0.424 ms
 azureuser@az-spk1-lxvm:~$ curl 10.100.0.100
 branch-vm1
+azureuser@az-spk1-lxvm:~$ 
 ```
-
-
 
 ## Important considerations
 
