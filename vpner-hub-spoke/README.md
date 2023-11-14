@@ -69,8 +69,6 @@ Here is the diagram showing the connectivity flow, in purple, between Azure VMs 
 
 A ping from az-spk1-lxvm to branch-vm1 has the following output:
 
-
-
 ```bash
 azureuser@az-spk1-lxvm:~$ hostname -I
 10.0.1.4 
