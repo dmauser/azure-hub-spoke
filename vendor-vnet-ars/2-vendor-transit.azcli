@@ -1,0 +1,180 @@
+# TODO: 1 - Add a separated NSG for Vendor
+
+#Parameters
+rg=lab-vendor-ars #Define your resource group
+location=southcentralus #Set location
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+
+# Vendor Transit VNET
+az network vnet create --address-prefixes 10.100.0.0/24 -n vendor-transit-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.100.0.0/27 --output none
+# Vendor ARS VNET
+az network vnet create --address-prefixes 10.110.0.0/24 -n vendor-ars-vnet -g $rg -l $location --subnet-name RouteServerSubnet --subnet-prefixes 10.110.0.0/27 --output none
+
+# Vendor1 VNET
+az network vnet create --address-prefixes 172.16.1.0/24 -n vendor1-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 172.16.1.0/27 --output none
+# Vendor2 VNET
+az network vnet create --address-prefixes 172.16.2.0/24 -n vendor2-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 172.16.2.0/27 --output none
+
+# Associate NSG to main subnet at vendor1-vnet
+az network vnet subnet update --name main --resource-group $rg --vnet-name vendor1-vnet --network-security-group $location-default-nsg --output none
+# Associate NSG to main subnet at vendor2-vnet
+az network vnet subnet update --name main --resource-group $rg --vnet-name vendor2-vnet --network-security-group $location-default-nsg --output none
+
+# Deploy VMs on the main subnet for each VNET
+az vm create --resource-group $rg --name vendor1-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor1-vnet --subnet main --no-wait --output none --only-show-errors
+az vm create --resource-group $rg --name vendor2-vm1 --image Ubuntu2204 --admin-username $username --admin-password $password --vnet-name vendor2-vnet --subnet main --no-wait --output none --only-show-errors
+
+
+# OPNsense NVA parameters
+ShellScriptName=configureopnsense.sh
+scenarioOption="TwoNics"
+virtualMachineSize=Standard_DS1_v2
+virtualNetworkName=vendor-transit-vnet
+existingvirtualNetwork=existing
+VNETAddress=10.100.0.0/24 
+UntrustedSubnetCIDR=10.100.0.32/28
+TrustedSubnetCIDR=10.100.0.48/28
+existingUntrustedSubnetName=untrusted
+existingTrustedSubnetName=trusted
+#OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
+
+# Create untrusted subnetnet
+echo Creating untrusted subnet
+az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet --name $existingUntrustedSubnetName --address-prefixes $UntrustedSubnetCIDR --output none
+# Create trusted subnetnet
+echo Creating trusted subnet
+az network vnet subnet create -g $rg --vnet-name vendor-transit-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
+
+echo "Deploying OPNsense NVA1 on the vendor-transit"
+vendornva=vendor-transit-opnnva1
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az deployment group create --name vendor-transit-nva-$RANDOM --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$vendornva virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+# Create Route Server at the vendor-ars-vnet
+subnetid=$(az network vnet subnet show --resource-group $rg --vnet-name vendor-ars-vnet --name RouteServerSubnet --query id --output tsv)
+echo "Creating Route Server at the vendor-ars-vnet"
+az network public-ip create --name vendor-rs-pip --resource-group $rg --location $location -o none
+az network routeserver create --name vendor-rs --resource-group $rg --location $location --hosted-subnet $subnetid --public-ip-address vendor-rs-pip --output none &>/dev/null &
+
+# Enable routserver branch to branch
+az network routeserver update --name vendor-rs --resource-group $rg --allow-b2b-traffic true --no-wait
+
+echo Adjusting OPNsense NSGs
+echo Checking subnet status...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name trusted -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Trusted subnet "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name untrusted -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Unrusted subnet "provisioningState="$prState
+    sleep 5
+done
+
+#echo Checking OPNSense provisioning state:
+# az deployment group show --name branch-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $vendornva-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $vendornva-Untrusted-NIC --network-security-group null --output none
+# Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+
+# Add RFC1918 to the NIC to allow RC1918 traffic over Vendor Firewall
+#az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n 'allow-rfc1918-in' --direction Inbound --priority 330 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+#az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n 'allow-rfc1918-out' --direction outbound --priority 340 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+
+AzurehubName=vendor #Azure Hub Name
+asn_transitnva=65100 # Set ASN
+
+# Peer with Route Server
+echo Peering NVAs with Route Server
+vendornvas=$(az vm list -g $rg --query '[?contains(name,`'$vendornva'`)].name' -o tsv)
+for nvaintname in $vendornvas
+do
+ #NVA BGP config variables (do not change)
+ routeserver_IP1=$(az network routeserver show --name vendor-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv)
+ routeserver_IP2=$(az network routeserver show --name vendor-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv)
+
+ # Building Route Server BGP Peering
+ echo Building BGP Peering between $AzurehubName-routeserver and $nvaintname
+ az network routeserver peering create --resource-group $rg --routeserver vendor-rs --name $nvaintname --peer-asn $asn_transitnva \
+ --peer-ip $(az network nic show --name "$nvaintname"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
+ --output none
+done
+
+# Create VNET peerings
+# Peer vendor1-vnet with vendor-transit-vnet
+echo Peering vendor1-vnet with vendor-transit-vnet
+az network vnet peering create --name vendor1-vnet-to-vendor-transit-vnet --resource-group $rg --vnet-name vendor1-vnet --remote-vnet vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+# Peer vendor2-vnet with vendor-transit-vnet
+echo Peering vendor2-vnet with vendor-transit-vnet
+az network vnet peering create --name vendor2-vnet-to-vendor-transit-vnet --resource-group $rg --vnet-name vendor2-vnet --remote-vnet vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+# Peer vendor1-vnet with vendor-ars-vnet and set useRemoteGateways to true
+echo Peering vendor1-vnet with vendor-ars-vnet
+az network vnet peering create --name vendor1-vnet-to-vendor-ars-vnet --resource-group $rg --vnet-name vendor1-vnet --remote-vnet vendor-ars-vnet --allow-vnet-access --allow-forwarded-traffic --use-remote-gateways true --output none
+# Peer vendor2-vnet with vendor-ars-vnet and set useRemoteGateways to true
+echo Peering vendor2-vnet with vendor-ars-vnet
+az network vnet peering create --name vendor2-vnet-to-vendor-ars-vnet --resource-group $rg --vnet-name vendor2-vnet --remote-vnet vendor-ars-vnet --allow-vnet-access --allow-forwarded-traffic --use-remote-gateways true --output none
+# Peer vendor-transit-vnet with vendor-ars-vnet
+echo Peering vendor-transit-vnet with vendor-ars-vnet
+az network vnet peering create --name vendor-transit-vnet-to-vendor-ars-vnet --resource-group $rg --vnet-name vendor-transit-vnet --remote-vnet vendor-ars-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+# Peer vendor-transit-vnet with vendor1-vnet
+echo Peering vendor-transit-vnet with vendor1-vnet
+az network vnet peering create --name vendor-transit-vnet-to-vendor1-vnet --resource-group $rg --vnet-name vendor-transit-vnet --remote-vnet vendor1-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+# Peer vendor-transit-vnet with vendor2-vnet
+echo Peering vendor-transit-vnet with vendor2-vnet
+az network vnet peering create --name vendor-transit-vnet-to-vendor2-vnet --resource-group $rg --vnet-name vendor-transit-vnet --remote-vnet vendor2-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+# Peer vendor-ars-vnet with vendor1-vnet
+echo Peering vendor-ars-vnet with vendor1-vnet
+az network vnet peering create --name vendor-ars-vnet-to-vendor1-vnet --resource-group $rg --vnet-name vendor-ars-vnet --remote-vnet vendor1-vnet --allow-vnet-access --allow-forwarded-traffic --allow-gateway-transit true --output none
+# Peer vendor-ars-vnet with vendor2-vnet
+echo Peering vendor-ars-vnet with vendor2-vnet
+az network vnet peering create --name vendor-ars-vnet-to-vendor2-vnet --resource-group $rg --vnet-name vendor-ars-vnet --remote-vnet vendor2-vnet --allow-vnet-access --allow-forwarded-traffic --allow-gateway-transit true --output none
+# Peer vendor-ars-vnet with vendor-transit-vnet
+echo Peering vendor-ars-vnet with vendor-transit-vnet
+az network vnet peering create --name vendor-ars-vnet-to-vendor-transit-vnet --resource-group $rg --vnet-name vendor-ars-vnet --remote-vnet vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --output none
+
+# Peer vendor-transit-vnet with az-hub-vnet with useRemoteGateways set to true
+echo Peering vendor-transit-vnet with az-hub-vnet
+az network vnet peering create --name vendor-transit-vnet-to-az-hub-vnet --resource-group $rg --vnet-name vendor-transit-vnet --remote-vnet az-hub-vnet --allow-vnet-access --allow-forwarded-traffic --use-remote-gateways true --output none
+# Peer az-hub-vnet with vendor-transit-vnet 
+echo Peering az-hub-vnet with vendor-transit-vnet
+az network vnet peering create --name az-hub-vnet-to-vendor-transit-vnet --resource-group $rg --vnet-name az-hub-vnet --remote-vnet vendor-transit-vnet --allow-vnet-access --allow-forwarded-traffic --allow-gateway-transit true --output none
+
+
+
+
+# Build ARS BGP from vendor-transit-opnnva1 to hub-rs
+AzurehubName=az-hub #Azure Hub Name
+asn_transitnva=65100 # Set ASN
+
+# Peer with Route Server
+echo Peering NVAs with Route Server
+vendornvas=$(az vm list -g $rg --query '[?contains(name,`'$vendornva'`)].name' -o tsv)
+for vendornva in $vendornvas
+do
+ #NVA BGP config variables (do not change)
+ routeserver_IP1=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv)
+ routeserver_IP2=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv)
+
+ # Building Route Server BGP Peering
+ echo Building BGP Peering between $AzurehubName-routeserver and $vendornva
+ az network routeserver peering create --resource-group $rg --routeserver az-hub-rs --name $vendornva --peer-asn $asn_transitnva \
+ --peer-ip $(az network nic show --name "$vendornva"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
+ --output none
+done
