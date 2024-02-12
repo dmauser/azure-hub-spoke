@@ -122,3 +122,8 @@ do
     echo "ER connection connection-to-$ername2 provisioningState="$prState
     sleep 5
 done
+
+
+# Get ExpressRoute Gateway Routes
+echo Getting ExpressRoute Gateway Routes
+az network vnet-gateway list-learned-routes --name az-hub-ergw --resource-group $rg --output table
