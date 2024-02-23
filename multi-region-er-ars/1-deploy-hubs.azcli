@@ -1,21 +1,25 @@
 # Run both command below to create Hub1+On-Premises and Hub2
 
 #Paramters
-rg=multi-region-er-ars
-hub1location=eastus2
-hub2location=centralus
+rg=multi-region-er-ars3
+hub1location=eastus
+hub2location=westus
+VmAdminPassword=azureadmin
+VmAdminPassword=Msft123Msft123
 
 # Step 1 - Deploy Hub1 and Hub2 base Lab using the following ARM templates
 
 az group create --name $rg --location $hub1location
-az deployment group create --name Hub1-$location --resource-group $rg \
---template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
---parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
+az deployment group create --name Hub1-$hub1location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv5.json \
+--parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/multi-region-er-ars/parameters1.json \
+--parameters location=$hub1location VmAdminUsername=azureadmin VmAdminPassword=Msft123Msft123 \
 --no-wait
 
-az deployment group create --name $hub2location --resource-group $rg \
---template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
+az deployment group create --name Hub2-$hub2location --resource-group $rg \
+--template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv5.json \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters2.json \
+--parameters location=$hub2location VmAdminUsername=azureadmin VmAdminPassword=Msft123Msft123 \
 --no-wait
 
 # It will prompt you to add usename and password twice (excepcted beahvior)

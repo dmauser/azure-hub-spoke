@@ -6,7 +6,7 @@
             "value": "*"
         },
         "deployHubVPNGateway": {
-            "value": "true"
+            "value": "false"
         },
         "deployOnpremisesVPNGateway": {
             "value": "false"
