@@ -1,0 +1,18 @@
+
+
+# Define your variables
+project=angular-expanse-327722 #Set your project Name. Get your PROJECT_ID use command: gcloud projects list 
+region=us-east1 #Set your region. Get Regions/Zones Use command: gcloud compute zones list
+zone=us-east1-b # Set availability zone: a, b or c.
+vpcrange=192.168.100.0/24 #Set your VPC Range
+envname=onprem #Set your environment name
+vmname=vm1
+mypip=$(curl -4 ifconfig.io -s) #Gets your Home Public IP or replace with that information. It will add it to the Firewall Rule.
+
+# Cleanup
+gcloud compute interconnects attachments delete $envname-vlan --region $region --quiet 
+gcloud compute routers delete $envname-router --region=$region --quiet
+gcloud compute instances delete $envname-vm1 --zone=$zone --quiet
+gcloud compute firewall-rules delete $envname-allow-traffic-from-azure --quiet
+gcloud compute networks subnets delete $envname-subnet --region=$region --quiet
+gcloud compute networks delete $envname-vpc --quiet
