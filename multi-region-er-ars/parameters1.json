@@ -2,9 +2,6 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "restrict_SSH_VM_AccessByPublicIP": {
-            "value": "*"
-        },
         "deployHubVPNGateway": {
             "value": "false"
         },
@@ -59,18 +56,18 @@
         "azure": {
             "value": {
                 "hubName": "Az-Hub1",
-                "addressSpacePrefix": "10.0.0.0/24",
+                "addressSpacePrefix": "10.10.0.0/24",
                 "subnetName": "subnet1",
-                "subnet1Prefix": "10.0.0.0/27",
-                "gatewaySubnetPrefix": "10.0.0.32/27",
-                "AzureFirewallPrefix": "10.0.0.64/26",
-                "rssubnetPrefix": "10.0.0.128/27",
+                "subnet1Prefix": "10.10.0.0/27",
+                "gatewaySubnetPrefix": "10.10.0.32/27",
+                "AzureFirewallPrefix": "10.10.0.64/26",
+                "rssubnetPrefix": "10.10.0.128/27",
                 "spoke1Name": "Az-Spk1",
-                "spoke1AddressSpacePrefix": "10.0.1.0/24",
-                "spoke1Subnet1Prefix": "10.0.1.0/27",
+                "spoke1AddressSpacePrefix": "10.10.1.0/24",
+                "spoke1Subnet1Prefix": "10.10.1.0/27",
                 "spoke2Name": "Az-Spk2",
-                "spoke2AddressSpacePrefix": "10.0.2.0/24",
-                "spoke2Subnet1Prefix": "10.0.2.0/27"
+                "spoke2AddressSpacePrefix": "10.10.2.0/24",
+                "spoke2Subnet1Prefix": "10.10.2.0/27"
             }
         }
     }
