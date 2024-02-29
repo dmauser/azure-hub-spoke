@@ -20,9 +20,9 @@ scenarioOption="TwoNics"
 virtualMachineSize=Standard_DS1_v2
 virtualNetworkName=az-hub1-vnet
 existingvirtualNetwork=existing
-VNETAddress=10.0.0.0/24 
-UntrustedSubnetCIDR=10.0.0.64/28
-TrustedSubnetCIDR=10.0.0.80/28
+VNETAddress=10.10.0.0/24 
+UntrustedSubnetCIDR=10.10.0.64/28
+TrustedSubnetCIDR=10.10.0.80/28
 existingUntrustedSubnetName=sdwan-untrusted
 existingTrustedSubnetName=sdwan-trusted
 #OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
@@ -58,8 +58,21 @@ do
     sleep 5
 done
 
-#echo Checking OPNSense provisioning state:
-# az deployment group show --name branch-opnnva-TwoNics -g $rg-$hub1name --query properties.provisioningState -o tsv
+#Add a loop script to check $nvasdhwan-trusted-nic and $nvasdhwan-untrusted-nic for provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $nvasdwan-trusted-NIC -g $rg-$hub1name --query provisioningState -o tsv)
+    echo Trusted NIC "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $nvasdwan-untrusted-NIC -g $rg-$hub1name --query provisioningState -o tsv)
+    echo Untrusted NIC "provisioningState="$prState
+    sleep 5
+done
 # Misc remove NSG from OPNSense NICs 
 az network nic update -g $rg-$hub1name -n $nvasdwan-trusted-NIC --network-security-group null --output none
 az network nic update -g $rg-$hub1name -n $nvasdwan-Untrusted-NIC --network-security-group null --output none
@@ -101,9 +114,9 @@ scenarioOption="TwoNics"
 virtualMachineSize=Standard_DS1_v2
 virtualNetworkName=az-hub2-vnet
 existingvirtualNetwork=existing
-VNETAddress=10.0.10.0/24 
-UntrustedSubnetCIDR=10.0.10.64/28
-TrustedSubnetCIDR=10.0.10.80/28
+VNETAddress=10.20.0.0/24 
+UntrustedSubnetCIDR=10.20.0.64/28
+TrustedSubnetCIDR=10.20.0.80/28
 existingUntrustedSubnetName=sdwan-untrusted
 existingTrustedSubnetName=sdwan-trusted
 #OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
@@ -139,9 +152,22 @@ do
     sleep 5
 done
 
-#echo Checking OPNSense provisioning state:
-# az deployment group show --name branch-opnnva-TwoNics -g $rg-$hub2name --query properties.provisioningState -o tsv
-# Misc remove NSG from OPNSense NICs 
+#Add a loop script to check $nvasdhwan-trusted-nic and $nvasdhwan-untrusted-nic for provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $nvasdwan-trusted-NIC -g $rg-$hub2name --query provisioningState -o tsv)
+    echo Trusted NIC "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $nvasdwan-untrusted-NIC -g $rg-$hub2name --query provisioningState -o tsv)
+    echo Untrusted NIC "provisioningState="$prState
+    sleep 5
+done
+# Misc remove NSG from OPNSense NICs
 az network nic update -g $rg-$hub2name -n $nvasdwan-trusted-NIC --network-security-group null --output none
 az network nic update -g $rg-$hub2name -n $nvasdwan-Untrusted-NIC --network-security-group null --output none
 # Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks

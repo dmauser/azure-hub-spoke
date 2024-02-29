@@ -68,6 +68,23 @@ az network vnet subnet update -g $branchrg --name trusted --vnet-name $branchnam
 az network nsg rule create -g $branchrg --nsg-name $branchname-nva-nsg  -n allow-udp500 --priority 100 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
 az network nsg rule create -g $branchrg --nsg-name $branchname-nva-nsg  -n allow-udp4500 --priority 101 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
 
+
+#Add a loop script to check $nvasdhwan-trusted-nic and $nvasdhwan-untrusted-nic for provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $branchname-opnnva-trusted-NIC -g $branchrg --query provisioningState -o tsv)
+    echo Trusted NIC "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network nic show --name $branchname-opnnva-untrusted-NIC -g $branchrg --query provisioningState -o tsv)
+    echo Untrusted NIC "provisioningState="$prState
+    sleep 5
+done
+
 # Create UDR to 10.0.0.0/8 to point to NVA
 # Get private ip of $branchname-lxnva1
 fs1nvaip=$(az network nic show --name $branchname-opnnva-Trusted-NIC --resource-group $branchrg --query ipConfigurations[0].privateIPAddress -o tsv)
@@ -76,8 +93,6 @@ az network route-table route create -g $branchrg --name default --route-table-na
 # Associate to branch main subnet
 az network vnet subnet update -g $branchrg -n vm-subnet --vnet-name $branchname-vnet --route-table $branchname-UDR -o none
 
-#echo Checking OPNSense provisioning state:
-# az deployment group show --name branch-opnnva-TwoNics -g $branchrg --query properties.provisioningState -o tsv
 # Misc remove NSG from OPNSense NICs 
 az network nic update -g $branchrg -n $branchname-opnnva-Trusted-NIC --network-security-group null --output none
 az network nic update -g $branchrg -n $branchname-opnnva-Untrusted-NIC --network-security-group null --output none

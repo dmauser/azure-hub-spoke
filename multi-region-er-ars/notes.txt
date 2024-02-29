@@ -1,0 +1,21 @@
+9500A-SEAEQX#show ip bgp vpnv4 vrf Daniel 172.16.0.0 255.255.255.0
+BGP routing table entry for 65006:65006:172.16.0.0/24, version 7618
+Paths: (2 available, best #1, table Daniel)
+Multipath: eBGP
+  Advertised to update-groups:
+     64         65
+  Refresh Epoch 1
+  133937 12076
+    192.168.152.18 (via vrf Daniel) from 192.168.152.18 (100.65.42.88)
+      Origin IGP, localpref 100, valid, external, best
+      Community: 65002:10 65517:65517
+      rx pathid: 0, tx pathid: 0x0
+      Updated on Feb 27 2024 19:38:57 UTC
+  Refresh Epoch 1
+  133937 12076, (received-only)
+    192.168.152.18 (via vrf Daniel) from 192.168.152.18 (100.65.42.88)
+      Origin IGP, localpref 100, valid, external
+      Community: 65002:10 65517:65517
+      Extended Community: RT:64601:113002 RT:64602:2 RT:64701:0
+      rx pathid: 0, tx pathid: 0
+      Updated on Feb 27 2024 19:38:57 UTC
