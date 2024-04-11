@@ -1,0 +1,14 @@
+#Parameters
+rg=lab-hub-gcponprem #Define your resource group
+location=northcentralus #Set location
+
+
+# List all ips for the vms in the resource group
+az vm list-ip-addresses --resource-group $rg --output table
+
+# Get az-hub-vm public ip address and access it using ssh username azureuser@publicipaddress
+ssh azureuser@172.183.227.187
+
+iperf3 -c 10.0.0.4 -t 30 -P 32 -d
+
+ping 10.0.0.4 -O | ts
