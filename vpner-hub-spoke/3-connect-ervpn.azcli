@@ -12,14 +12,16 @@ ername2="branch-er-circuit"
 perloc2="Chicago"
 providerloc2=Megaport
 
-# Validate if both ername1 and ername2 have provider provisioned status
-er1status=$(az network express-route list --query "[?name=='$ername1'].serviceProviderProvisioningState" -o tsv)
-er2status=$(az network express-route list --query "[?name=='$ername2'].serviceProviderProvisioningState" -o tsv)
-if [ $er1status != "Provisioned" ] || [ $er2status != "Provisioned" ]
-then
-    echo "One or more ExpressRoute circuits are not in Provisioned state. Please provision with the Provider and try again."
-    exit 1
-fi
+
+while true; do
+    er1status=$(az network express-route list --query "[?name=='$ername1'].serviceProviderProvisioningState" -o tsv)
+    er2status=$(az network express-route list --query "[?name=='$ername2'].serviceProviderProvisioningState" -o tsv)
+    if [ $er1status == "Provisioned" ] && [ $er2status == "Provisioned" ]; then
+        break
+    fi
+    echo "Waiting for ExpressRoute Circuit to be provisioned..."
+    sleep 10
+done
 
 # Connect ername1 to az-hub1-ergw
 az network vpn-connection create --name $ername1-conn-$AzurehubName \
@@ -43,7 +45,7 @@ do
 done
 
 # Create branch local network gateway
-nvauntrustedip=$(az network nic show -g $rg -n $virtualMachineName-Untrusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+nvauntrustedip=$(az network nic show -g $rg -n branch-opnnva-Untrusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
 az network local-gateway create --name $branchName-lgw \
 --resource-group $rg --gateway-ip-address $nvauntrustedip \
 --bgp-peering-address 169.254.0.1 \

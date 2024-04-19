@@ -33,10 +33,6 @@ az deployment group create --name Hub2-$hub2location --resource-group $rg-$hub2n
 --parameters location=$hub2location VmAdminUsername=$VmAdminUsername VmAdminPassword=$VmAdminPassword \
 --no-wait
 
-# It will prompt you to add usename and password twice (excepcted beahvior)
-# Please provide string value for 'VmAdminUsername'
-# Please provide securestring value for 'VmAdminPassword'
-
 # Step 2 - Create an ExpressRoute Circuit
 
 # 1) Create ExpressRoute Circuit

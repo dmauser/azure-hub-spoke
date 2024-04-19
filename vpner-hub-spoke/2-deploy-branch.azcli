@@ -74,8 +74,8 @@ az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $v
 #Create ExpressRoute Gateway
 echo Creating Branch ExpressRoute Gateway
 az network vnet subnet create --address-prefix $GatewaySubnet --name GatewaySubnet -g $rg --vnet-name $virtualNetworkName --output none
-az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none
-az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet branch --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none --sku Standard
+az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet $virtualNetworkName --gateway-type "ExpressRoute" --sku "Standard" --no-wait
 
 # Loop script to check ER Gateways provisioning state
 echo Validating ER Gateways provisioning...

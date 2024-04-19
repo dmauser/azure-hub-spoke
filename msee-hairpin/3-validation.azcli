@@ -1,0 +1,30 @@
+#Paramters
+rg=lab-msee-hairpin
+hub1name=hub1
+hub2name=hub2
+
+# List all the vms in both resource groups
+az vm list -g $rg-$hub1name --query "[].{Name:name, ProvisioningState:provisioningState}" -o table
+az vm list -g $rg-$hub2name --query "[].{Name:name, ProvisioningState:provisioningState}" -o table
+
+# List all the VMs private and public ip addresses
+az vm list-ip-addresses -g $rg-$hub1name -o table
+az vm list-ip-addresses -g $rg-$hub2name -o table
+
+#  Loop script to get effective routes for all the VMs in both resource groups but filter using grep to show  output only for VirtualNetworkGateway, VnetLocal and VnetPeering
+for vm in $(az vm list -g $rg-$hub1name --query "[].name" -o tsv)
+do
+  echo Effecitve Routes for $vm
+  az network nic show-effective-route-table --ids $(az vm show -g $rg-$hub1name -n $vm --query "networkProfile.networkInterfaces[].id" -o tsv) -o table | grep -E 'VirtualNetworkGateway|VnetLocal|VNetPeering'
+done
+# Hub2
+for vm in $(az vm list -g $rg-$hub2name --query "[].name" -o tsv)
+do
+  echo Effecitve Routes for $vm
+  az network nic show-effective-route-table --ids $(az vm show -g $rg-$hub2name -n $vm --query "networkProfile.networkInterfaces[].id" -o tsv) -o table | grep -E 'VirtualNetworkGateway|VnetLocal|VNetPeering'
+done
+
+# Login On-premises VM:
+#Login in the VM
+gcloud compute ssh onprem-vm1 --zone=us-east1-b
+
