@@ -21,8 +21,8 @@ TrustedSubnetCIDR=10.100.0.16/28
 GatewaySubnet=10.100.0.32/27
 subnet1=10.100.0.96/27
 subnet2=10.100.0.160/27
-existingUntrustedSubnetName=untrusted
-existingTrustedSubnetName=trusted
+existingUntrustedSubnetName=Untrusted-Subnet
+existingTrustedSubnetName=Trusted-Subnet
 OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/vpner-hub-spoke/script/
 
 #ExpressRoute specific variables
