@@ -1,0 +1,66 @@
+# Pre-Requisites
+
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+# Deploy BGP endpoont (Make the changes based on your needs)
+branchname=branch #Target NET
+instances=1 #Set number of NVA instaces to be created
+nvaintname=lxnva #NVA instance name
+nvasubnet=nvasubnet #Existing Subnet where NVA gets deployed
+
+#Specific NVA BGP settings
+local_asn=65100 # Set ASN
+rmt_asn=65515
+bgp_network1="10.100.0.0/24"
+
+# Create NVa VNET
+az network vnet create --name $branchname-vnet --resource-group $rg --location $region --address-prefix 10.100.0.0/24 --subnet-name subnet1 --subnet-prefix 10.100.0.96/27 --location $region -o none
+# Create VM subnet
+az network vnet subnet create --name $nvasubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefix 10.100.0.128/28 -o none
+# Assing nsg to the subnet
+az network vnet subnet update -g $rg -n subnet1 --vnet-name $branchname-vnet  --network-security-group $region-default-nsg -o none
+# Create Ubuntu VM on subnet1 
+az vm create -n $branchname-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $virtualMachineSize -l $region --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+
+
+# Deploy NVA instances on the target VNET above.
+nvanames=$(i=1;while [ $i -le $instances ];do echo $branchname-$nvaintname$i; ((i++));done)
+for nvaname in $nvanames
+do
+ # Enable routing, NAT and BGP on Linux NVA:
+ az network public-ip create --name $nvaname-pip --resource-group $rg --location $region --sku Standard --output none --only-show-errors
+ az network nic create --name $nvaname-nic --resource-group $rg --subnet $nvasubnet --vnet $branchname-vnet --public-ip-address $nvaname-pip --ip-forwarding true --location $region -o none
+ az vm create --resource-group $rg --location $region --name $nvaname --size $virtualMachineSize --nics $nvaname-nic  --image Ubuntu2204 --admin-username $username --admin-password $password -o none --only-show-errors
+ 
+ #Enable boot diagnostics
+ nvalocation=$(az vm show -n $nvaname -g $rg --query location -o tsv)
+ az vm boot-diagnostics enable --name $nvaname -g $rg -o none
+
+ # Enable routing and NAT on Linux NVA:
+ scripturi="https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/branch-ffr.sh"
+ az vm extension set --resource-group $rg --vm-name $nvaname  --name customScript --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$scripturi\"],\"commandToExecute\": \"./branch-ffr.sh $local_asn $bgp_routerId $bgp_network1 $hubnva1_IP1 $hubnva1_IP2 $rmt_asn\"}" \
+ --force-update \
+ --no-wait
+done
+
+# Assign nsg to nvasubnet
+echo Creating NSG and associate to NVA Subnet
+az network nsg create --resource-group $rg --name $branchname-nva-nsg --location $region -o none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'default-allow-ssh' --direction Inbound --priority 300 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 22 --access Allow --protocol Tcp --description "Allow inbound SSH" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 310 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'allow-rfc1918-out' --direction outbound --priority 320 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n allow-udp500 --priority 330 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n allow-udp4500 --priority 340 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
+
+az network vnet subnet update -g $rg --name $nvasubnet --vnet-name $branchname-vnet --network-security-group $branchname-nva-nsg -o none
+
