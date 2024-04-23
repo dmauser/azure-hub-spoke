@@ -1,79 +1,23 @@
 #Parameters
-rg=lab-ars-sdwan #Define your resource group
-location=southcentralus #Set location
-username=azureuser #Set username
-password=Msft123Msft123 #Set password
-virtualMachineSize=Standard_DS1_v2 #Set VM size
+region=southcentralus
+rg=lab-hs-vpner
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
 
-# Get Public IP Address from All VMs in the resource group
-az vm list-ip-addresses -g $rg -o table
+# List VNET Gateways in the resource group
+az network vnet-gateway list -g $rg --query "[].{Name:name}" -o table
 
+# Get az-hub-vpngw private ips
+hubvpngwip1=$(az network vnet-gateway show -g $rg -n az-hub-vpngw --query "bgpSettings.bgpPeeringAddresses[0].tunnelIpAddresses[1]" -o tsv)
+hubvpngwip2=$(az network vnet-gateway show -g $rg -n az-hub-vpngw --query "bgpSettings.bgpPeeringAddresses[1].tunnelIpAddresses[1]" -o tsv)
 
-# SSH branch-lxnva1
-ssh azureuser@52.248.82.130 
+# Get branch-lnx-nva private ips
+branchnva1_IP1=$(az network nic show -g $rg --name branch-lxnva1-nic --query "ipConfigurations[0].privateIPAddress" -o tsv)
 
-sudo apt-get update && sudo apt-get install -y strongswan
-
-# rename the default ipsec.conf file
-sudo mv /etc/ipsec.conf /etc/ipsec.conf.bak
-
-# Download ipsec.conf from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/fs1-ipsec.conf -O /etc/ipsec.conf
-
-# Download ipsec.secrets from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/config/fs1-ipsec.secrets -O /etc/ipsec.secrets
-
-# Download script from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/fs1-ipsec-vti.sh -O /etc/ipsec-vti.sh
-
-# Make the script executable
-sudo chmod +x /etc/ipsec-vti.sh
-
-# Restart the ipsec service
-sudo systemctl restart strongswan
-
-# Check the status of the ipsec service
-sudo systemctl status strongswan
-
-# show the ipsec tunnels
-sudo ipsec statusall
-
-sudo ip -s tunnel show
-
-ifconfig vti1
-
-# **************************************************************
-# Run on az-hub-lnxnva1
-# SSH az-hub-lnxnva1
-nva1pip=$(az vm show -d -g $rg -n az-hub-lxnva1 --query publicIps -o tsv)
-ssh $username@$nva1pip
-
-sudo apt-get update && sudo apt-get install -y strongswan
-
-# rename the default ipsec.conf file
-sudo mv /etc/ipsec.conf /etc/ipsec.conf.bak
-
-# Download ipsec.conf from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/nva1-ipsec.conf -O /etc/ipsec.conf
-
-# Download ipsec.secrets from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/nva1-ipsec.secrets -O /etc/ipsec.secrets
-
-# Download VTI script from git hub
-sudo wget https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/nva1-ipsec-vti.sh -O /etc/ipsec-vti.sh
-
-# Make the script executable
-sudo chmod +x /etc/ipsec-vti.sh
-
-# Restart the ipsec service
-sudo systemctl restart strongswan
-
-# Check the status of the ipsec service
-sudo systemctl status strongswan
-
-# show the ipsec tunnels
-sudo ipsec statusall
-
-ip -s tunnel show
-
-ifconfig vti1
+scripturi="https://raw.githubusercontent.com/dmauser/azure-routeserver/main/ars-sdwan-er/script/branch-ffr.sh"
+az vm extension set --resource-group $rg --vm-name $nvaname  --name customScript --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$scripturi\"],\"commandToExecute\": \"./branch-ffr.sh $local_asn $bgp_routerId $bgp_network1 $hubnva1_IP1 $hubnva1_IP2 $rmt_asn\"}" \
+ --force-update \
+ --no-wait
