@@ -82,8 +82,7 @@ $left_id $rigth_ip1 : PSK "abc123"
 $left_id $rigth_ip2 : PSK "abc123"
 EOF
 
-#
-# /etc/ipsec-vti.sh
+cat <<EOF > /etc/ipsec-vti.sh
 #
 IP=$(which ip)
 IPTABLES=$(which iptables)
@@ -123,6 +122,7 @@ $IPTABLES -t mangle -D FORWARD -o ${VTI_INTERFACE} -p tcp -m tcp --tcp-flags SYN
 $IPTABLES -t mangle -D INPUT -p esp -s ${PLUTO_PEER} -d ${PLUTO_ME} -j MARK --set-xmark ${PLUTO_MARK_IN}
 ;;
 esac
+EOF
 
 # Enable IPv4 forwarding
 sysctl -w net.ipv4.ip_forward=1
