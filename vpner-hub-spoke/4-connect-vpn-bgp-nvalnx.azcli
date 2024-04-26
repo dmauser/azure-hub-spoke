@@ -1,0 +1,33 @@
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+AzurehubName=az-hub
+branchName=branch
+sharedkey=abc123
+
+# Create branch local network gateway
+nvauntrustedip=$(az network nic show -g $rg -n branch-lxnva1-nic --query ipConfigurations[0].privateIPAddress -o tsv)
+az network local-gateway create --name $branchName-lng-bgp \
+--resource-group $rg --gateway-ip-address $nvauntrustedip \
+--bgp-peering-address 169.254.0.1 \
+--asn 65100 \
+--output none
+
+# Create VPN connection trusted interface private IP
+az network vpn-connection create --name $AzurehubName-lxnva-conn \
+--resource-group $rg --vnet-gateway1 $AzurehubName-vpngw \
+--shared-key $sharedkey \
+--local-gateway2 $branchName-lng-bgp \
+--enable-bgp \
+--output none &>/dev/null &
+
+sleep 5
+echo "Waiting for VPN connection to be in Connected state..."
+while [ $(az network vpn-connection show --name $AzurehubName-lxnva-conn --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
+do
+    echo "Waiting for VPN connection to be in Connected state..."
+    sleep 10
+done
+
+# Set connnection to use useLocalAzureIpAddress=true
+az network vpn-connection update --name $AzurehubName-lxnva-conn -g $rg --set "useLocalAzureIpAddress=true" --output none --no-wait

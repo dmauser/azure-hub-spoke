@@ -22,4 +22,10 @@ az vm extension set --resource-group $rg --vm-name $nvaname  --name customScript
 
 echo $hubvpngwip1
 echo $hubvpngwip2
-echo $branchnva1_IP1
+
+# List all VMs and IP addresses in the resource group
+az vm list-ip-addresses -g $rg -o table
+
+# SSH to the branch-lnx-nva VM
+ssh -t $username@$branchnva1_IP1 "sudo ipsec restart"
+ssh azureuser@52.248.82.130
