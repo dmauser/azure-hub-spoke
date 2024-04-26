@@ -24,6 +24,11 @@ do
   az network nic show-effective-route-table --ids $(az vm show -g $rg-$hub2name -n $vm --query "networkProfile.networkInterfaces[].id" -o tsv) -o table | grep -E 'VirtualNetworkGateway|VnetLocal|VNetPeering'
 done
 
+# Allow VNET traffic for ER to ER work over Megaport
+# For each ER Gateway in the RG allow-remote-vnet-traffic
+az network vnet-gateway update --name az-hub-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+az network vnet-gateway update --name  branch-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+
 # Login On-premises VM:
 #Login in the VM
 gcloud compute ssh onprem-vm1 --zone=us-east1-b

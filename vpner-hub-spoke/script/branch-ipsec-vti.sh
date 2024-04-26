@@ -41,7 +41,7 @@ conn %default
         # DPD Retries : 3
         dpdtimeout=30s
         # Tuning Parameters for AWS Remote Gateway:
-        keyexchange=ikev1
+        keyexchange=ikev2
         rekey=yes
         reauth=no
         dpdaction=restart
@@ -129,4 +129,4 @@ sysctl -w net.ipv4.ip_forward=1
 sysctl -w net.ipv4.conf.eth0.disable_xfrm=1
 sysctl -w net.ipv4.conf.eth0.disable_policy=1
 
-sudo systemctl restart strongswan
+sudo systemctl restart ipsec

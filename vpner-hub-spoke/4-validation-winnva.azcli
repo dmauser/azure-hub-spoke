@@ -66,8 +66,7 @@ az network nic show --name branch-opnnva-Untrusted-NIC --resource-group $rg --qu
 # Create UDR with disable GatewayPropagation to branch
 az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
 # Add default to branch-forcevpn-udr to openvpn trusted interface
-#nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
-nvatrustedip=10.100.0.133
+nvatrustedip=$(az network nic show -g $rg -n branch-winnvanic --query ipConfigurations[0].privateIPAddress -o tsv)
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
 # Associate route table to subnet1 on branch vnet

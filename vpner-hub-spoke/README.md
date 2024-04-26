@@ -16,7 +16,7 @@ For more information on IPSec over Express Route consult: [Site-to-Site VPN conn
 
 The solution involves ExpressRoute connectivity between On-premises and Azure.
 
-On-premises is emulated in Azure, network by using a ExpressRoute Virtual Network Gateway and a open-source VPN solution (OPNSense)  as network virtual applicance NVA. The OPNSense will be configured to establish a IPSec tunnel with the Azure Virtual Network Gateway over the ExpressRoute private peering.
+On-premises is emulated in Azure, network by using a ExpressRoute Virtual Network Gateway and a open-source VPN solution (OPNSense)  as network virtual appliance NVA. The OPNSense will be configured to establish a IPSec tunnel with the Azure Virtual Network Gateway over the ExpressRoute private peering.
 
 There's a dedicated ExpressRoute for the Azure Hub (azure-er-circuit) and another dedicated to on-premises (branch-er-circuit). There's an virtual interconnection between both circuits is facilitated by a virtual router hosted on an ExpressRoute Service Provider.
 

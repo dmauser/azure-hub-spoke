@@ -1,0 +1,48 @@
+# Pre-Requisites
+
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_D2s_v3 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+branchname=branch
+nvasubnet=winnvasubnet
+nvasubnetprefix=$nvasubnetprefix
+
+#Specific NVA BGP settings
+local_asn=65100 # Set ASN
+rmt_asn=65515
+bgp_network1="10.100.0.0/24"
+
+# Create NVA Subnet
+az network vnet subnet create --name $nvasubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefix $nvasubnetprefix -o none
+
+# Create Windows VM on nvasubnet
+# Create NIC with IP forwarding enabled
+az network nic create --resource-group $rg --name $branchname-winnvanic --vnet-name $branchname-vnet --subnet $nvasubnet --location $region --ip-forwarding true -o none
+# Create Windows VM
+az vm create --resource-group $rg \
+ --name $branchname-winnva \
+ --image MicrosoftWindowsServer:WindowsServer:2022-datacenter-smalldisk-g2:latest \
+ --size $vmsize \
+ --admin-username $username \
+ --admin-password $password \
+ --nics $branchname-winnvanic \
+ --nsg "" \
+ --no-wait 
+
+# Assign nsg to nvasubnet
+echo Creating NSG and associate to NVA Subnet
+az network nsg create --resource-group $rg --name $branchname-nva-nsg --location $region -o none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'default-allow-ssh' --direction Inbound --priority 300 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 22 --access Allow --protocol Tcp --description "Allow inbound SSH" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 310 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n 'allow-rfc1918-out' --direction outbound --priority 320 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n allow-udp500 --priority 330 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $branchname-nva-nsg -n allow-udp4500 --priority 340 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
+az network vnet subnet update -g $rg --name $nvasubnet --vnet-name $branchname-vnet --network-security-group $branchname-nva-nsg -o none
+
+# Improvements
+# Add Powershell to automate RRAS config
+# Add Note about adding NVA IP to the megarport 

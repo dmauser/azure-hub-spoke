@@ -1,0 +1,74 @@
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+AzurehubName=az-hub
+branchName=branch
+sharedkey=abc123
+#ExpressRoute specific variables
+ername1="azure-er-circuit" 
+perloc1="Chicago"
+providerloc1=Megaport
+ername2="branch-er-circuit"
+perloc2="Chicago"
+providerloc2=Megaport
+
+
+while true; do
+    er1status=$(az network express-route list --query "[?name=='$ername1'].serviceProviderProvisioningState" -o tsv)
+    er2status=$(az network express-route list --query "[?name=='$ername2'].serviceProviderProvisioningState" -o tsv)
+    if [ $er1status == "Provisioned" ] && [ $er2status == "Provisioned" ]; then
+        break
+    fi
+    echo "Waiting for ExpressRoute Circuit to be provisioned..."
+    sleep 10
+done
+
+# Connect ername1 to az-hub1-ergw
+az network vpn-connection create --name $ername1-conn-$AzurehubName \
+--resource-group $rg --vnet-gateway1 $AzurehubName-ergw \
+--express-route-circuit2 $ername1 \
+--routing-weight 0 \
+--output none &>/dev/null &
+
+# Connect ername2 to branch-ergw
+az network vpn-connection create --name $ername2-conn-$branchName \
+--resource-group $rg --vnet-gateway1 $branchName-ergw \
+--express-route-circuit2 $ername2 \
+--routing-weight 0 \
+--output none &>/dev/null &
+
+# Wait until both connections are in Connected state
+while [ $(az network vpn-connection show --name $ername1-conn-$AzurehubName --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ] || [ $(az network vpn-connection show --name $ername2-conn-$branchName --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
+do
+    echo "Waiting for ExpressRoute connections to be in Connected state..."
+    echo "$ername1-conn-$AzurehubName: $(az network vpn-connection show --name $ername1-conn-$AzurehubName --resource-group $rg --query "provisioningState" -o tsv)"
+    echo "$ername2-conn-$branchName: $(az network vpn-connection show --name $ername2-conn-$branchName --resource-group $rg --query "provisioningState" -o tsv)"
+    sleep 10
+done
+
+# Create branch local network gateway
+nvauntrustedip=$(az network nic show -g $rg -n branch-opnnva-Untrusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+az network local-gateway create --name $branchName-lgw \
+--resource-group $rg --gateway-ip-address $nvauntrustedip \
+--bgp-peering-address 169.254.0.1 \
+--asn 65510 \
+--output none
+
+# Create VPN connection to OPNSense trusted interface private IP
+az network vpn-connection create --name $AzurehubName-to-$branchName-conn \
+--resource-group $rg --vnet-gateway1 $AzurehubName-vpngw \
+--shared-key $sharedkey \
+--local-gateway2 $branchName-lgw \
+--enable-bgp \
+--output none &>/dev/null &
+
+sleep 5
+echo "Waiting for VPN connection to be in Connected state..."
+while [ $(az network vpn-connection show --name $AzurehubName-to-$branchName-conn --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
+do
+    echo "Waiting for VPN connection to be in Connected state..."
+    sleep 10
+done
+
+# Set connnection to use useLocalAzureIpAddress=true
+az network vpn-connection update --name $AzurehubName-to-$branchName-conn -g $rg --set "useLocalAzureIpAddress=true" --output none --no-wait

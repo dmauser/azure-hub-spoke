@@ -1,0 +1,61 @@
+# Pre-Requisites
+
+#Parameters
+region=southcentralus
+rg=lab-hs-vpner
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+branchname=branch
+nvasubnet=nvasubnet
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+#Specific NVA BGP settings
+local_asn=65100 # Set ASN
+rmt_asn=65515
+bgp_network1="10.100.0.0/24"
+
+# Create Branch VNET
+az network vnet create --name $branchname-vnet --resource-group $rg --location $region --address-prefix 10.100.0.0/24 --subnet-name subnet1 --subnet-prefix 10.100.0.96/27 --location $region -o none
+# Create Ubuntu VM on subnet1 
+az vm create -n $branchname-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+
+# Create Azure Bastion subnet on branchname-vnet
+az network vnet subnet create --name AzureBastionSubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefixes 10.100.0.192/26 -o none
+# Create Azure bastion Public IP
+az network public-ip create --name $branchname-bastion-pip --resource-group $rg --location $region --allocation-method Static --sku Standard -o none --only-show-errors
+# Deploy Azure Bastion on branchname-vnet
+az network bastion create --name $branchname-bastion --public-ip-addres $branchname-bastion-pip  --resource-group $rg --vnet-name $branchname-vnet --location $region -o none --no-wait
+
+#Create ExpressRoute Gateway
+echo Creating Branch ExpressRoute Gateway
+az network vnet subnet create --address-prefix 10.100.0.32/27 --name GatewaySubnet -g $rg --vnet-name $branchname-vnet --output none
+az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none --sku Standard
+az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet $branchname-vnet --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "Branch ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+
+# Enabling VNET transit over ER
+echo Enabling VNET transit over ER
+az network vnet-gateway update --name  branch-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "Branch ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
