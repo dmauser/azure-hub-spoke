@@ -52,14 +52,14 @@ done
 # Forcing traffic from branch 10.100.0.0/24 to go over VPN
 
 # Ensure On-premises is adverising VPN exrernal interface (for this lab OPNSense WAN/Untrusted interface 10.100.0.4)
-az network nic show --name branch-opnnva-Untrusted-NIC --resource-group $rg --query ipConfigurations[].privateIPAddress -o tsv
+az network nic show --name branch-lxnva1-nic --resource-group $rg --query ipConfigurations[].privateIPAddress -o tsv
 
 # 1) Force VM traffic to go over OPNSense NVA using UDR
 # Create UDR with disable GatewayPropagation to branch
 az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
 # Add default to branch-forcevpn-udr to openvpn trusted interface
 #nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
-nvatrustedip=10.100.0.133
+nvatrustedip=$(az network nic show --name branch-lxnva1-nic --resource-group $rg --query ipConfigurations[].privateIPAddress -o tsv)
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
 # Associate route table to subnet1 on branch vnet
@@ -168,21 +168,61 @@ az rest --method get --uri /subscriptions/$subid/resourceGroups/$rg/providers/Mi
 # LinuxNVA
 ip -s tunnel show
 
+# BGP information
+sudo vtysh -c "show ip bgp"
+sudo vtysh -c "show ip bgp summary"
+sudo systemctl restart frr #restart FRR
 
-# 
+# IPSec
+sudo ipsec statusall #check IPSec status
+sudo ipsec restart #restart IPSec
 
+# Check IP routes
+ip route show
+
+
+# IPperf3 client
 iperf3 -c 10.100.0.100 -t 60 -P 32 
+# IPperf3 server
+iperf3 -s
+
+# IPSec configuration
+sudo cat /etc/ipsec.conf
+#
+# /etc/ipsec.conf
+#
+conn %default
+        auto=start
+        authby=secret
+        type=tunnel
+        leftsubnet=0.0.0.0/0
+        rightsubnet=0.0.0.0/0
+        left=10.100.0.132
+        leftid=10.100.0.132
+        keyexchange=ikev2
+        ike=aes128-sha1-modp1024!
+        esp=aes128-sha1-modp1024!
+        ikelifetime=28800s
+        lifetime=2700s
+        dpddelay=30s
+        dpdtimeout=120s
+        dpdaction=restart
+        closeaction=restart 
+        leftupdown=/etc/ipsec-vti.sh
+
+conn azvpngw_ip1
+        right=10.0.0.36
+        rightid=10.0.0.36
+        mark=%unique
+conn azvpngw_ip2
+        right=10.0.0.37
+        rightid=10.0.0.37
+        mark=%unique
 
 
-    routes:
-      - to: 10.0.0.36/32
-        via: 10.100.0.129
-        metric: 100
-      - to: 10.0.0.37/32
-        via: 10.100.0.129
-        metric: 100
-
-root@branch-lxnva1:/home/azureuser# cat /etc/netplan/01-netcfg.bkp 
+# Route configuration
+# Add VPN Gateay Routes
+cat /etc/netplan/01-netcfg.yaml
 network:
   version: 2
   renderer: networkd
@@ -193,4 +233,58 @@ network:
         via: 10.100.0.129
       - to: 10.0.0.37/32
         via: 10.100.0.129
+# VTI configuration
+cat /etc/ipsec-vti.sh
 
+#!/bin/bash
+
+#
+# /etc/ipsec-vti.sh
+
+#
+IP=$(which ip)
+IPTABLES=$(which iptables)
+
+PLUTO_MARK_OUT_ARR=(${PLUTO_MARK_OUT//// })
+PLUTO_MARK_IN_ARR=(${PLUTO_MARK_IN//// })
+case "$PLUTO_CONNECTION" in
+azvpngw_ip1)
+VTI_INTERFACE=vti1
+VTI_LOCALADDR=169.254.0.1/32
+VTI_REMOTEADDR=169.254.21.1/32
+;;
+azvpngw_ip2)
+VTI_INTERFACE=vti2
+VTI_LOCALADDR=169.254.0.1/32
+VTI_REMOTEADDR=169.254.21.2/32
+;;
+esac
+
+case "${PLUTO_VERB}" in
+up-client)
+#$IP tunnel add ${VTI_INTERFACE} mode vti local ${PLUTO_ME} remote ${PLUTO_PEER} okey ${PLUTO_MARK_OUT_ARR[0]} ikey ${PLUTO_MARK_IN_ARR[0]}
+$IP link add ${VTI_INTERFACE} type vti local ${PLUTO_ME} remote ${PLUTO_PEER} okey ${PLUTO_MARK_OUT_ARR[0]} ikey ${PLUTO_MARK_IN_ARR[0]}
+sysctl -w net.ipv4.conf.${VTI_INTERFACE}.disable_policy=1
+sysctl -w net.ipv4.conf.${VTI_INTERFACE}.rp_filter=2 || sysctl -w net.ipv4.conf.${VTI_INTERFACE}.rp_filter=0
+$IP addr add ${VTI_LOCALADDR} remote ${VTI_REMOTEADDR} dev ${VTI_INTERFACE}
+$IP link set ${VTI_INTERFACE} up mtu 1436
+$IPTABLES -t mangle -I FORWARD -o ${VTI_INTERFACE} -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+$IPTABLES -t mangle -I INPUT -p esp -s ${PLUTO_PEER} -d ${PLUTO_ME} -j MARK --set-xmark ${PLUTO_MARK_IN}
+$IP route flush table 220
+#/etc/init.d/bgpd reload || /etc/init.d/quagga force-reload bgpd
+;;
+down-client)
+#$IP tunnel del ${VTI_INTERFACE}
+$IP link del ${VTI_INTERFACE}
+$IPTABLES -t mangle -D FORWARD -o ${VTI_INTERFACE} -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+$IPTABLES -t mangle -D INPUT -p esp -s ${PLUTO_PEER} -d ${PLUTO_ME} -j MARK --set-xmark ${PLUTO_MARK_IN}
+;;
+esac
+
+# Enable IPv4 forwarding
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv4.conf.eth0.disable_xfrm=1
+sysctl -w net.ipv4.conf.eth0.disable_policy=1
+
+# Restart frr service
+systemctl restart frr
