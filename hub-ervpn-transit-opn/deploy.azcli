@@ -1,6 +1,6 @@
 #Parameters
 rg=lab-ervpn-transit-opn #Define your resource group
-location=eastus #Set location
+location=southcentralus #Set location
 username=azureuser #Set username
 password=Msft123Msft123 #Set password
 virtualMachineSize=Standard_DS1_v2 #Set VM size

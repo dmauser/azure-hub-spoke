@@ -36,7 +36,7 @@ UntrustedSubnetCIDR=10.64.0.64/28
 TrustedSubnetCIDR=10.64.0.80/28
 existingUntrustedSubnetName=untrusted
 existingTrustedSubnetName=trusted
-OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
+# OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
 
 # Create untrusted subnetnet
 echo Creating untrusted subnet
