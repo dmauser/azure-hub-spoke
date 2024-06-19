@@ -60,7 +60,7 @@ while [ $(az network vnet-gateway  list -g $rg --query '[].provisioningState' -o
 # Add check for Service Provider serviceProviderProvisioningState = Provisioned
 erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
 az network vpn-connection create --name er-connection-to-hub \
---resource-group $rg --vnet-gateway1 az-hub-ergw \
+--resource-group $rg --vnet-gateway1 az-hub-ergwscale \
 --express-route-circuit2 $erid \
 --routing-weight 0 \
 --output none
