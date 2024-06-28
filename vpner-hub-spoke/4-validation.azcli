@@ -3,6 +3,8 @@ rg=lab-hs-vpner
 region=$(az group show -n $rg --query location -o tsv)
 virtualNetworkName=branch-vnet
 mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+virtualMachineName=branch-opnnva
+rsname=$(az network routeserver list --resource-group $rg --query "[].name" -o tsv | grep az-hub-rs)
 
 # List all VMs and their IP addresses
 az vm list-ip-addresses -g $rg -o table
@@ -10,7 +12,6 @@ az vm list-ip-addresses -g $rg -o table
 # Review Azure Route Server configuration:
 # **** Azure Route Server ****
 # RS instance IPs
-rsname=$(az network routeserver list --resource-group $rg --query "[].name" -o tsv | grep az-hub-rs)
 echo Router Server name $rsname: && \
 echo Route Server IPs: && \
 az network routeserver show --name $rsname --resource-group $rg --query 'virtualRouterIps[]' -o tsv
@@ -58,8 +59,7 @@ az network nic show --name branch-opnnva-Untrusted-NIC --resource-group $rg --qu
 # Create UDR with disable GatewayPropagation to branch
 az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
 # Add default to branch-forcevpn-udr to openvpn trusted interface
-#nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
-nvatrustedip=10.100.0.133
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
 az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
 # Associate route table to subnet1 on branch vnet
@@ -67,7 +67,7 @@ az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $v
 
 # Update Azure Route Server routing preference:
 echo Updating Azure Route Server routing preference
-hubroutingpreference=VpnGateway #(ASPath, ExpressRoute, VpnGateway)
+hubroutingpreference=ASPath #(ASPath, ExpressRoute, VpnGateway)
 az network routeserver update -g $rg -n $rsname --hub-routing-preference $hubroutingpreference -o none
 
 # Get Azure Route Server routing preference using restapi 

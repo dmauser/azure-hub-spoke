@@ -1,6 +1,6 @@
 #Parameters
-region=southcentralus
 rg=lab-hs-vpner
+region=$(az group show -n $rg --query location -o tsv)
 AzurehubName=az-hub
 branchName=branch
 sharedkey=abc123
@@ -12,14 +12,11 @@ ername2="branch-er-circuit"
 perloc2="Chicago"
 providerloc2=Megaport
 
-
-while true; do
-    er1status=$(az network express-route list --query "[?name=='$ername1'].serviceProviderProvisioningState" -o tsv)
-    er2status=$(az network express-route list --query "[?name=='$ername2'].serviceProviderProvisioningState" -o tsv)
-    if [ $er1status == "Provisioned" ] && [ $er2status == "Provisioned" ]; then
-        break
-    fi
-    echo "Waiting for ExpressRoute Circuit to be provisioned..."
+while [ $(az network express-route show -g $rg --name $ername1 --query serviceProviderProvisioningState -o tsv) != "Provisioned" ] || [ $(az network express-route show -g $rg --name $ername1 --query serviceProviderProvisioningState -o tsv) != "Provisioned" ]
+do
+    echo "Waiting for ExpressRoute connections to be in Connected state..."
+    echo "$ername1 $(az network express-route show -g $rg --name $ername1 --query serviceProviderProvisioningState -o tsv)"
+    echo "$ername2 $(az network express-route show -g $rg --name $ername2 --query serviceProviderProvisioningState -o tsv)"
     sleep 10
 done
 
@@ -38,6 +35,7 @@ az network vpn-connection create --name $ername2-conn-$branchName \
 --output none &>/dev/null &
 
 # Wait until both connections are in Connected state
+Sleep 10
 while [ $(az network vpn-connection show --name $ername1-conn-$AzurehubName --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ] || [ $(az network vpn-connection show --name $ername2-conn-$branchName --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
 do
     echo "Waiting for ExpressRoute connections to be in Connected state..."
@@ -63,10 +61,10 @@ az network vpn-connection create --name $AzurehubName-to-$branchName-conn \
 --output none &>/dev/null &
 
 sleep 5
-echo "Waiting for VPN connection to be in Connected state..."
+echo "Waiting for VPN connection to be in provisioningState..."
 while [ $(az network vpn-connection show --name $AzurehubName-to-$branchName-conn --resource-group $rg --query "provisioningState" -o tsv) != "Succeeded" ]
 do
-    echo "Waiting for VPN connection to be in Connected state..."
+    echo "Waiting for VPN connection to be in provisioningState..."
     sleep 10
 done
 

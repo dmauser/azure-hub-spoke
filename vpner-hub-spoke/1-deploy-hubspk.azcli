@@ -1,8 +1,8 @@
 # Pre-Requisites
 
 #Parameters
-region=southcentralus
 rg=lab-hs-vpner
+region=westus3
 username=azureuser
 password="Msft123Msft123" #Please change your password
 vmsize=Standard_DS1_v2 #VM Size
