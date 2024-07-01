@@ -1,5 +1,5 @@
 #Parameters
-rg=lab2-er-hubspk #Define your resource group
+rg=lab-er-scale #Define your resource group
 location=westus3 #Set location
 username=azureuser #Set username
 password=Msft123Msft123 #Set password
