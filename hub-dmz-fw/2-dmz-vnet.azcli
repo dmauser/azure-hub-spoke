@@ -1,0 +1,105 @@
+# TODO: 1 - Add a separated NSG for dmz
+
+#Parameters
+rg=lab-hub-dmzfw #Define your resource group
+location=southcentralus #Set location
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+
+# dmz Transit VNET
+az network vnet create --address-prefixes 10.100.0.0/24 -n dmz-vnet -g $rg -l $location --subnet-name main --subnet-prefixes 10.100.0.0/27 --output none
+
+# OPNsense NVA parameters
+ShellScriptName=configureopnsense.sh
+scenarioOption="TwoNics"
+virtualMachineSize=Standard_DS1_v2
+virtualNetworkName=dmz-vnet
+existingvirtualNetwork=existing
+VNETAddress=10.100.0.0/24 
+UntrustedSubnetCIDR=10.100.0.32/28
+TrustedSubnetCIDR=10.100.0.48/28
+existingUntrustedSubnetName=untrusted
+existingTrustedSubnetName=trusted
+#OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
+
+# Create untrusted subnetnet
+echo Creating untrusted subnet
+az network vnet subnet create -g $rg --vnet-name dmz-vnet --name $existingUntrustedSubnetName --address-prefixes $UntrustedSubnetCIDR --output none
+# Create trusted subnetnet
+echo Creating trusted subnet
+az network vnet subnet create -g $rg --vnet-name dmz-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
+
+echo "Deploying OPNsense NVA1 on the dmz-transit"
+dmznva=dmz-opnnva1
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az deployment group create --name dmz-transit-nva-$RANDOM --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$dmznva virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+echo Adjusting OPNsense NSGs
+echo Checking subnet status...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name trusted -g $rg --vnet-name dmz-vnet --query provisioningState -o tsv)
+    echo Trusted subnet "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name untrusted -g $rg --vnet-name dmz-vnet --query provisioningState -o tsv)
+    echo Unrusted subnet "provisioningState="$prState
+    sleep 5
+done
+#echo Checking OPNSense provisioning state:
+# az deployment group show --name branch-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
+# Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $dmznva-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $dmznva-Untrusted-NIC --network-security-group null --output none
+# Add RFC1918 to the NIC to allow RC1918 traffic over dmz Firewall
+#az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n 'allow-rfc1918-in' --direction Inbound --priority 330 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+#az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n 'allow-rfc1918-out' --direction outbound --priority 340 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+
+AzurehubName=az-hub #Azure Hub Name
+asn_dmznva=65100 # Set ASN
+
+# Peer with Route Server
+echo Peering NVAs with Route Server
+dmznvas=$(az vm list -g $rg --query '[?contains(name,`'$dmznva'`)].name' -o tsv)
+for nvaintname in $dmznvas
+do
+ #NVA BGP config variables (do not change)
+ routeserver_IP1=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv)
+ routeserver_IP2=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv)
+
+ # Building Route Server BGP Peering
+ echo Building BGP Peering between $AzurehubName-rs and $nvaintname
+ az network routeserver peering create --resource-group $rg --routeserver az-hub-rs --name $nvaintname --peer-asn $asn_dmznva \
+ --peer-ip $(az network nic show --name "$nvaintname"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
+ --output none
+done
+
+# Peer dmz-vnet with az-hub-vnet with useRemoteGateways set to true
+echo Peering dmz-vnet with az-hub-vnet
+az network vnet peering create --name dmz-vnet-to-az-hub-vnet --resource-group $rg --vnet-name dmz-vnet --remote-vnet az-hub-vnet --allow-vnet-access --allow-forwarded-traffic --use-remote-gateways true --output none
+# Peer az-hub-vnet with dmz-vnet 
+echo Peering az-hub-vnet with dmz-vnet
+az network vnet peering create --name az-hub-vnet-to-dmz-vnet --resource-group $rg --vnet-name az-hub-vnet --remote-vnet dmz-vnet --allow-vnet-access --allow-forwarded-traffic --allow-gateway-transit true --output none
+
+# Create Route table to associate to untrusted subnet
+echo Creating Route Table for untrusted subnet
+az network route-table create --name dmz-vnet-udr --resource-group $rg --location $location --output none --disable-bgp-route-propagation
+
+# Associate to untrusted subnet
+echo Associating Route Table to untrusted subnet
+az network vnet subnet update --name untrusted --resource-group $rg --vnet-name dmz-vnet --route-table dmz-vnet-udr --output none

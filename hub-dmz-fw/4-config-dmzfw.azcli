@@ -1,0 +1,16 @@
+# Configure OPNSense
+# Adjust Firewall LAN
+# Add RFC 1918 to Static Route Table
+# Enable Routing General
+# Enable BGP
+# Add BGP Peer
+# Set BPG ASN to 65100
+# Uncheck Network Import-Check
+# Enable NAT Outbound
+
+ #NVA BGP config variables (do not change)
+# ARS IP1
+echo Dump ARS IP1
+az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv
+echo Dump ARS IP2
+az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv
