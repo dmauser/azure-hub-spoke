@@ -20,10 +20,10 @@ AzurehubgatewaySubnetPrefix=10.0.0.32/27 #Azure Hub Gateway Subnet address prefi
 AzureFirewallPrefix=10.0.0.64/26 #Azure Firewall Prefix
 AzurehubrssubnetPrefix=10.0.0.128/27 #Azure Hub Route Server subnet address prefix
 AzureHubBastionSubnet=10.0.0.192/26
-Azurespoke1Name=az-spk11 #Azure Spoke 1 name
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
 Azurespoke1AddressSpacePrefix=10.0.1.0/24 # Azure Spoke 1 VNET address space
 Azurespoke1Subnet1Prefix=10.0.1.0/27 # Azure Spoke 1 Subnet1 address prefix
-Azurespoke2Name=az-spk12 #Azure Spoke 2 name
+Azurespoke2Name=az-spk2 #Azure Spoke 2 name
 Azurespoke2AddressSpacePrefix=10.0.2.0/24 # Azure Spoke 1 VNET address space
 Azurespoke2Subnet1Prefix=10.0.2.0/27 # Azure Spoke 1 VNET address space
 
