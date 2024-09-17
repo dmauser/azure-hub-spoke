@@ -1,0 +1,249 @@
+# Pre-Requisites
+
+#Parameters
+rg=lab-sdwan-fw  #Define your resource group
+location=$(az group show -n $rg --query location -o tsv) 
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+# OPNsense NVA1 parameters
+ShellScriptName=configureopnsense.sh
+scenarioOption="TwoNics"
+virtualMachineSize=Standard_DS1_v2
+virtualMachineName=dc1-opnnva
+virtualNetworkName=dc1-vnet
+existingvirtualNetwork=new
+VNETAddress=10.128.0.0/24 
+UntrustedSubnetCIDR=10.128.0.0/28
+TrustedSubnetCIDR=10.128.0.16/28
+GatewaySubnet=10.128.0.32/27
+RouteServerSubnet=10.128.0.128/27
+subnet1=10.128.0.96/27
+subnet2=10.128.0.160/27
+existingUntrustedSubnetName=untrusted
+existingTrustedSubnetName=trusted
+
+echo "Deploying OPNsense NVA1 on the dc1"
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_0:13_0-release:13.0.0 -o none
+az deployment group create --name dc1-nva-$RANDOM --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$virtualMachineName virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+sleep 5
+echo Checking dc1 VNET provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet show -n $virtualNetworkName -g $rg  --query 'provisioningState' -o tsv)
+    echo "dc1 VNET provisioning state provisioningState="$prState
+    sleep 5
+done
+
+#ExpressRoute specific variables
+ername1="azure-er-circuit" 
+perloc1="Chicago"
+providerloc1=Megaport
+ername2="dc1-er-circuit"
+perloc2="Chicago"
+providerloc2=Megaport
+
+#Create ER circuits
+echo Creating ExpressRoute Circuits
+az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
+az network express-route create --bandwidth 50 -n $ername2 --peering-location "$perloc2" -g $rg --provider $providerloc2 -l $location --sku-family MeteredData --sku-tier Standard -o none &>/dev/null &
+
+echo Creating dc1 VMs...
+# Deploy dc1 VM:
+# Subnet1
+az network vnet subnet create -g $rg --vnet-name $virtualNetworkName -n subnet1 --address-prefixes $subnet1  --output none
+az vm create -n dc1-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $virtualMachineSize -l $location --subnet subnet1 --vnet-name $virtualNetworkName --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+
+echo Associating NSG on Spokes and dc1 VNETs
+#Updating NSGs:
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp500 --priority 100 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp4500 --priority 101 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 320 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-out' --direction outbound --priority 330 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+# Associating NSG to the VNET subnets (Spokes and dc1es)
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+
+# Create UDR to 10.0.0.0/8 to point to NVA
+# Get private ip of dc1-lxnva1
+fs1nvaip=$(az network nic show --name dc1-opnnva-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv)
+az network route-table create -g $rg --name dc1-default-to-nva -l $location -o none --disable-bgp-route-propagation
+az network route-table route create -g $rg --name default --route-table-name dc1-default-to-nva --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $fs1nvaip -o none
+az network route-table route create -g $rg --name exception --route-table-name dc1-default-to-nva --address-prefix $mypip/32 --next-hop-type Internet -o none
+
+# Associate to dc1 subnet1
+az network vnet subnet update -g $rg -n subnet1 --vnet-name $virtualNetworkName --route-table dc1-default-to-nva -o none
+
+
+#Create Route Server
+echo Creating dc1 Route Server
+az network vnet subnet create --address-prefix $RouteServerSubnet --name RouteServerSubnet -g $rg --vnet-name $virtualNetworkName --output none
+subnetid=$(az network vnet subnet show --name RouteServerSubnet -g $rg --vnet-name $virtualNetworkName --query id -o tsv)
+az network public-ip create --name dc1-rs-pip --resource-group $rg --location $location -o none
+az network routeserver create --name dc1-rs --resource-group $rg --location $location --public-ip-address dc1-rs-pip --hosted-subnet $subnetid --hub-routing-preference ASPath &>/dev/null &
+
+#Create ExpressRoute Gateway
+echo Creating dc1 ExpressRoute Gateway
+az network vnet subnet create --address-prefix $GatewaySubnet --name GatewaySubnet -g $rg --vnet-name $virtualNetworkName --output none
+az network public-ip create --name dc1-ergw-pip --resource-group $rg --location $location -o none
+az network vnet-gateway create --name dc1-ergw --resource-group $rg --location $location --public-ip-address dc1-ergw-pip --vnet $virtualNetworkName --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+
+echo Adjusting OPNsense NSGs
+echo Checking subnet status...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name Trusted-Subnet -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Trusted subnet "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name Untrusted-Subnet -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Unrusted subnet "provisioningState="$prState
+    sleep 5
+done
+
+# Enable routserver branch to branch
+az network routeserver update --name dc1-rs --resource-group $rg --allow-b2b-traffic true --no-wait
+# Loop script to validate route server provisioning state
+echo Validating Route Server provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network routeserver show -n dc1-rs -g $rg --query 'provisioningState' -o tsv)
+    echo "Route Server provisioning state provisioningState="$prState
+    sleep 5
+done
+
+# BGP peer OpnSense Trusted NIC private ip with Azure Route Server
+# Get OpnSense Trusted NIC private IP
+echo Getting OPNSense Trusted NIC private IP
+opnTrustedNicPrivateIp=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+echo Associating OPNSense Trusted NIC with Azure Route Server
+az network routeserver peering create --name dc1-opnnva-rs-peer --resource-group $rg --routeserver dc1-rs --peer-asn 65010 --peer-ip $opnTrustedNicPrivateIp --no-wait
+
+#echo Checking OPNSense provisioning state:
+# az deployment group show --name dc1-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
+# Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name Trusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name Untrusted-Subnet --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group null --output none
+### Installing tools for networking connectivity validation such as traceroute, tcptraceroute, iperf and others (check link below for more details) 
+echo "Installing net utilities inside VMs (traceroute, tcptraceroute, iperf3, hping3, and others)"
+nettoolsuri="https://raw.githubusercontent.com/dmauser/azure-vm-net-tools/main/script/nettools.sh"
+for vm in `az vm list -g $rg --query "[?contains(storageProfile.imageReference.publisher,'Canonical')].name" -o tsv`
+do
+ az vm extension set --force-update \
+ --resource-group $rg \
+ --vm-name $vm \
+ --name customScript \
+ --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$nettoolsuri\"],\"commandToExecute\": \"./nettools.sh\"}" \
+ --no-wait
+done
+
+#Enabling boot diagnostics for all VMs in the resource group (Serial console)
+echo Enabling boot diagnostics
+az vm boot-diagnostics enable --ids $(az vm list -g $rg --query '[].id' -o tsv) -o none
+
+# Display express route circuit service key
+echo $ername1 service key:
+az network express-route show -n $ername1 -g $rg --query serviceKey -o tsv
+echo $ername2 service key:
+az network express-route show -n $ername2 -g $rg --query serviceKey -o tsv
+echo "Initiating ExpressRoute Circuit provisioning with your ER Provider"
+# Press any key to continue
+read -n 1 -s -r -p "Press any key to continue"
+
+# Only continue if the ExpressRoute Circuit has provider provisioning state as Provisioned
+while [ $(az network express-route show -n $ername1 -g $rg --query serviceProviderProvisioningState -o tsv) != "Provisioned" ]; do echo "Waiting for ExpressRoute Circuit to be provisioned at the Provider..."; sleep 30; done
+while [ $(az network express-route show -n $ername2 -g $rg --query serviceProviderProvisioningState -o tsv) != "Provisioned" ]; do echo "Waiting for ExpressRoute Circuit to be provisioned at the Provider..."; sleep 30; done
+
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n az-hub-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "az-hub-ergw ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n dc1-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "dc1-ergw ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+
+# Step 4 - Attach ER Circuits to their respective Gateways
+# Add check for Service Provider serviceProviderProvisioningState = Provisioned
+erid=$(az network express-route show -n $ername1 -g $rg --query id -o tsv) 
+az network vpn-connection create --name $ername1-connection-to-hub \
+--resource-group $rg --vnet-gateway1 az-hub-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none &>/dev/null &
+erid=$(az network express-route show -n $ername2 -g $rg --query id -o tsv) 
+az network vpn-connection create --name $ername2-connection-to-dc1 \
+--resource-group $rg --vnet-gateway1 dc1-ergw \
+--express-route-circuit2 $erid \
+--routing-weight 0 \
+--output none &>/dev/null &
+
+# Loop script to  check connection status for $ername1-connection-to-hub and $ername2-connection-to-hub
+echo Validating ER Gateway connections...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vpn-connection show -n $ername1-connection-to-hub -g $rg --query 'provisioningState' -o tsv)
+    echo "$ername1-connection-to-hub ER Gateway connection status="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vpn-connection show -n $ername2-connection-to-dc1 -g $rg --query 'provisioningState' -o tsv)
+    echo "$ername2-connection-to-hub ER Gateway connection status="$prState
+    sleep 5
+done
+# Enable VNET transit over ER
+echo Enabling VNET transit over ER
+az network vnet-gateway update --name az-hub-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+az network vnet-gateway update --name dc1-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n az-hub-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "az-hub-ergw ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n dc1-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "dc1-ergw ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+echo Deployment has finished
+
+
+

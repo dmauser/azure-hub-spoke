@@ -1,0 +1,31 @@
+rg=tipnode-rg-9112
+region=eastus2euap
+username=azureuser
+password="Msft123Msft123" #Please change your password
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+hubvnet=tipnode-vnet-9112
+
+# Set Azure Subscription
+az account set --subscription 7afd8f92-c220-4f53-886e-1df53a69afd4
+
+# Create vnet az-spk1-vnet and az-spk2-vnet
+az network vnet create --name az-spk1-vnet --resource-group $rg --location $region --address-prefix 10.0.1.0/24 --subnet-name main --subnet-prefix 10.0.1.0/27 -o none
+az network vnet create --name az-spk2-vnet --resource-group $rg --location $region --address-prefix 10.0.2.0/24 --subnet-name main --subnet-prefix 10.0.2.0/27 -o none
+
+# Create NSG
+az network nsg create --name $region-default-nsg --resource-group $rg --location $region -o none
+
+# Associate NSG to main subnets
+az network vnet subnet update --vnet-name az-spk1-vnet --name main --resource-group $rg --network-security-group $region-default-nsg -o none
+az network vnet subnet update --vnet-name az-spk2-vnet --name main --resource-group $rg --network-security-group $region-default-nsg -o none
+
+# Create Ubuntu VM on subnet1 
+az vm create -n az-spk1-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet main --vnet-name az-spk1-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+az vm create -n az-spk2-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $region --subnet main --vnet-name az-spk2-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+
+# Peer hubvnet to spokes and spokes to hubvnet
+az network vnet peering create --name hub-to-spk1 --resource-group $rg --vnet-name $hubvnet --remote-vnet az-spk1-vnet --allow-vnet-access -o none --allow-gateway-transit true
+az network vnet peering create --name hub-to-spk2 --resource-group $rg --vnet-name $hubvnet --remote-vnet az-spk2-vnet --allow-vnet-access -o none --allow-gateway-transit true
+az network vnet peering create --name spk1-to-hub --resource-group $rg --vnet-name az-spk1-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true
+az network vnet peering create --name spk2-to-hub --resource-group $rg --vnet-name az-spk2-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true

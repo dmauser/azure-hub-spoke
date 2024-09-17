@@ -1,8 +1,5 @@
-# TODO1 - fix typo sdwan-trusted
-# TODO2 - Breakdown SD-WAN and Firewall separated scripts
-
 #Parameters
-rg=lab-vendor-ars #Define your resource group
+rg=lab-sdwan-fw #Define your resource group
 location=southcentralus #Set location
 username=azureuser #Set username
 password=Msft123Msft123 #Set password
@@ -34,10 +31,18 @@ JsonAzure={\"hubName\":\"$AzurehubName\",\"addressSpacePrefix\":\"$Azurehubaddre
 echo Deploying base lab: Hub with Spoke1 and 2. VMs and Azure Route Server.
 echo "*** It will take around 20 minutes to finish the deployment ***"
 az group create --name $rg --location $location --output none
-az deployment group create --name lab-$RANDOM --resource-group $rg \
+az deployment group create --name lab-sdwan-deploy --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv5.json \
 --parameters Restrict_SSH_VM_AccessByPublicIP=$mypip deployHubERGateway=true deployAzureRouteServer=true Azure=$JsonAzure VmAdminUsername=$username VmAdminPassword=$password virtualMachineSize=$virtualMachineSize deployBastion=true \
---output none
+--output none \
+--no-wait
+
+# Loop script to check the deployment status every 15 seconds
+echo "Checking deployment status"
+while [[ $(az deployment group show --name lab-26426 -g $rg --query properties.provisioningState -o tsv) != "Succeeded" ]]; do
+    echo "Deployment running..."
+    sleep 15
+done
 
 ######### OPNsense SD-WAN parameters
 ShellScriptName=configureopnsense.sh
@@ -50,7 +55,6 @@ UntrustedSubnetCIDR=10.0.0.64/28
 TrustedSubnetCIDR=10.0.0.80/28
 existingUntrustedSubnetName=sdwan-untrusted
 existingTrustedSubnetName=sdwan-trusted
-#OpnScriptURI=https://raw.githubusercontent.com/dmauser/azure-virtualwan/main/natvpn-over-er/opnsense/
 
 # Create untrusted subnetnet
 echo Creating untrusted subnet
@@ -60,20 +64,20 @@ echo Creating trusted subnet
 az network vnet subnet create -g $rg --vnet-name $AzurehubName-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
 
 echo "Deploying OPNsense NVA1 on the $AzurehubName"
-nvasdwan=$AzurehubName-sdwan1
+nvasdwan1=$AzurehubName-sdwan1
 az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
-az deployment group create --name $AzurehubName-nva-$RANDOM --resource-group $rg \
+az deployment group create --name $AzurehubName-nva-sdwan1 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
---parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan1 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
 --no-wait
 
-#nvasdwan=$AzurehubName-sdwan2
-#echo "Deploying OPNsense NVA2 on the $AzurehubName"
-#az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
-#az deployment group create --name $AzurehubName-nva-$RANDOM --resource-group $rg \
-#--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
-#--parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
-#--no-wait
+nvasdwan2=$AzurehubName-sdwan2
+echo "Deploying OPNsense NVA2 on the $AzurehubName"
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az deployment group create --name $AzurehubName-nva-sdwan2 --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan2 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
 
 echo Adjusting OPNsense SD-WAN
 echo Checking subnet status...
@@ -94,9 +98,7 @@ done
 
 #echo Checking OPNSense provisioning state:
 # az deployment group show --name branch-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
-# Misc remove NSG from OPNSense NICs 
-az network nic update -g $rg -n $nvasdwan-trusted-NIC --network-security-group null --output none
-az network nic update -g $rg -n $nvasdwan-Untrusted-NIC --network-security-group null --output none
+
 # Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
 # az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
 # az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
@@ -105,12 +107,18 @@ az network vnet subnet update --name sdwan-untrusted --resource-group $rg --vnet
 az network vnet subnet update --name sdwan-trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
 az network vnet subnet update --name sdwan-untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
 
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $nvasdwan1-trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvasdwan1-Untrusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvasdwan2-trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvasdwan2-Untrusted-NIC --network-security-group null --output none
+
 AzurehubName=az-hub #Azure Hub Name
 asn_sdwan=65004 # Set ASN
 
 # Peer with Route Server
 echo Peering NVAs with Route Server
-nvasdwans=$(az vm list -g $rg --query '[?contains(name,`'$nvasdwan'`)].name' -o tsv)
+nvasdwans=$(az vm list -g $rg --query '[?contains(name,`'sdwan'`)].name' -o tsv)
 for nvaintname in $nvasdwans
 do
  #NVA BGP config variables (do not change)
@@ -122,6 +130,25 @@ do
  az network routeserver peering create --resource-group $rg --routeserver az-hub-rs --name $nvaintname --peer-asn $asn_sdwan \
  --peer-ip $(az network nic show --name "$nvaintname"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
  --output none
+done
+
+# Deploy Azure Load Balancer for sdwan1 and sdwan2
+echo Deploying Azure Load Balancer for SDWANs
+az network lb create -g $rg --name az-hub-sdwan --sku Standard --frontend-ip-name frontendip1 --backend-pool-name nvabackend --vnet-name $AzurehubName-vnet --subnet=$existingTrustedSubnetName -o none
+az network lb probe create -g $rg --lb-name az-hub-sdwan --name sshprobe --protocol tcp --port 22 -o none
+az network lb rule create -g $rg --lb-name az-hub-sdwan --name haportrule --protocol all --frontend-ip-name frontendip1 --backend-pool-name nvabackend --probe-name sshprobe --frontend-port 0 --backend-port 0 -o none
+
+# Attach NVAs to the Backend as NICs
+nvanames=$(az vm list -g $rg --query '[?contains(name,`'sdwan'`)].name' -o tsv)
+for nvaname in $nvanames
+do
+  az network nic ip-config address-pool add \
+  --address-pool nvabackend \
+  --ip-config-name ipconfig1 \
+  --nic-name $nvaname-trusted-NIC \
+  --resource-group $rg \
+  --lb-name az-hub-sdwan \
+  --output none
 done
 
 ########### OPNsense FIREWALL parameters
@@ -145,11 +172,19 @@ echo Creating trusted subnet
 az network vnet subnet create -g $rg --vnet-name $AzurehubName-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
 
 echo "Deploying OPNsense NVA1 on the $AzurehubName"
-nvafw=$AzurehubName-opnfw1
+nvafw1=$AzurehubName-opnfw1
 az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
-az deployment group create --name $AzurehubName-nva-$RANDOM --resource-group $rg \
+az deployment group create --name $AzurehubName-nva-$nvafw1 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
---parameters scenarioOption=$scenarioOption virtualMachineName=$nvafw virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$nvafw1 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+echo "Deploying OPNsense NVA1 on the $AzurehubName"
+nvafw2=$AzurehubName-opnfw2
+az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az deployment group create --name $AzurehubName-nva-$nvafw2 --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$nvafw2 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
 --no-wait
 
 echo Adjusting OPNsense NSGs
@@ -171,9 +206,6 @@ done
 
 #echo Checking OPNSense provisioning state:
 # az deployment group show --name branch-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
-# Misc remove NSG from OPNSense NICs 
-az network nic update -g $rg -n $nvafw-Trusted-NIC --network-security-group null --output none
-az network nic update -g $rg -n $nvafw-Untrusted-NIC --network-security-group null --output none
 # Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
 # az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
 # az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
@@ -181,33 +213,44 @@ az network vnet subnet update --name fw-trusted --resource-group $rg --vnet-name
 az network vnet subnet update --name fw-untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
 az network vnet subnet update --name fw-trusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
 az network vnet subnet update --name fw-untrusted --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
-
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $nvafw1-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvafw1-Untrusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvafw2-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $nvafw2-Untrusted-NIC --network-security-group null --output none
 # Add Rules to NSG
 az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
 az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-vnetoutany' --direction Inbound --priority 320 --source-address-prefixes VirtualNetwork --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*' --access Allow --protocol '*' --description "Allow inbound VNET to Any for NVA Routing out" --output none
 az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n allow-udp500 --priority 330 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
 az network nsg rule create -g $rg --nsg-name $location-default-nsg  -n allow-udp4500 --priority 340 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
 
-nvafw=$AzurehubName-opnfw1
-AzurehubName=az-hub #Azure Hub Name
-asn_hubfw=65000 # Set ASN
+# Deploy Azure Load Balancer for opnfw1 and opnfw2
+echo Deploying Azure Load Balancer for nvas in the $AzurehubName
+az network lb create -g $rg --name az-hub-opnfw --sku Standard --frontend-ip-name frontendip1 --backend-pool-name nvabackend --vnet-name $AzurehubName-vnet --subnet=$existingTrustedSubnetName -o none
+az network lb probe create -g $rg --lb-name az-hub-opnfw --name sshprobe --protocol tcp --port 22 -o none
+az network lb rule create -g $rg --lb-name az-hub-opnfw --name haportrule --protocol all --frontend-ip-name frontendip1 --backend-pool-name nvabackend --probe-name sshprobe --frontend-port 0 --backend-port 0 -o none
 
-# Peer with Route Server
-echo Peering NVAs with Route Server
-nvafws=$(az vm list -g $rg --query '[?contains(name,`'$nvafw'`)].name' -o tsv)
-for nvaintname in $nvafws
+# Attach NVAs to the Backend as NICs
+nvanames=$(az vm list -g $rg --query '[?contains(name,`'opnfw'`)].name' -o tsv)
+for nvaname in $nvanames
 do
- #NVA BGP config variables (do not change)
- routeserver_IP1=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv)
- routeserver_IP2=$(az network routeserver show --name az-hub-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv)
-
- # Building Route Server BGP Peering
- echo Building BGP Peering between $AzurehubName-routeserver and $nvaintname
- az network routeserver peering create --resource-group $rg --routeserver az-hub-rs --name $nvaintname --peer-asn $asn_hubfw \
- --peer-ip $(az network nic show --name "$nvaintname"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
- --output none
+  az network nic ip-config address-pool add \
+  --address-pool nvabackend \
+  --ip-config-name ipconfig1 \
+  --nic-name $nvaname-trusted-NIC \
+  --resource-group $rg \
+  --lb-name az-hub-opnfw \
+  --output none
 done
 
 # Enable Branch to Branch 
-echo Enabling ARS Branch to Branch
-az network routeserver update --resource-group $rg --name az-hub-rs --allow-b2b-traffic true --no-wait
+echo Enabling ARS Branch to Branch and set hub routing preference to ASpath
+az network routeserver update --resource-group $rg --name az-hub-rs --allow-b2b-traffic true --hub-routing-preference ASPath --no-wait
+echo Validating Route Server provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network routeserver show -n az-hub-rs -g $rg --query 'provisioningState' -o tsv)
+    echo "Route Server provisioning state provisioningState="$prState
+    sleep 5
+done

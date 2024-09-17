@@ -1,0 +1,62 @@
+#Parameters
+rg=lab-sdwan-fw  #Define your resource group
+location=$(az group show -n $rg --query location -o tsv) 
+username=azureuser #Set username
+password=Msft123Msft123 #Set password
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+# Create trusted-fw UDR with BGP propagation disabled and add RFC1918 routes with next hop as sd-wan loadbalancer
+echo Creating trusted-fw UDR with BGP propagation disabled and add RFC1918 routes with next hop as sd-wan loadbalancer
+frontendIp=$(az network lb show -g $rg --name az-hub-sdwan --query "frontendIPConfigurations[].privateIPAddress" -o tsv)
+#frontendIp=10.0.0.84
+az network route-table create -g $rg --name fw-trusted-udr --location $location --disable-bgp-route-propagation -o none
+az network route-table route create -g $rg --route-table-name fw-trusted-udr --name route1 --address-prefix 10.0.0.0/8 --next-hop-type VirtualAppliance --next-hop-ip-address $frontendIp -o none
+az network route-table route create -g $rg --route-table-name fw-trusted-udr --name route2 --address-prefix 172.16.0.0/12 --next-hop-type VirtualAppliance --next-hop-ip-address $frontendIp -o none
+az network route-table route create -g $rg --route-table-name fw-trusted-udr --name route3 --address-prefix 192.168.0.0/16 --next-hop-type VirtualAppliance --next-hop-ip-address $frontendIp -o none
+
+# Associate the trusted-fw UDR to the trusted-fw subnet
+echo Associating the trusted-fw UDR to the trusted-fw subnet
+az network vnet subnet update -g $rg --vnet-name az-hub-vnet --name fw-trusted --route-table fw-trusted-udr -o none
+
+# Create fw-untrusted-udr with BGP propagation disabled
+echo Creating fw-untrusted-udr with BGP propagation disabled
+az network route-table create -g $rg --name fw-untrusted-udr --location $location -o none --disable-bgp-route-propagation
+
+# Associate the fw-untrusted-udr to the fw-untrusted subnet
+echo Associating the fw-untrusted-udr to the fw-untrusted subnet
+az network vnet subnet update -g $rg --vnet-name az-hub-vnet --name fw-untrusted --route-table fw-untrusted-udr -o none
+
+# Create sdwan-untrusted-udr with BGP propagation disabled
+echo Creating sdwan-untrusted-udr with BGP propagation disabled
+az network route-table create -g $rg --name sdwan-untrusted-udr --location $location -o none --disable-bgp-route-propagation
+
+# Associate the sdwan-untrusted-udr to the sdwan-untrusted subnet
+echo Associating the sdwan-untrusted-udr to the sdwan-untrusted subnet
+az network vnet subnet update -g $rg --vnet-name az-hub-vnet --name sdwan-untrusted --route-table sdwan-untrusted-udr -o none
+
+# Create sd-wan-truested-udr
+echo Creating sd-wan-trusted-udr
+az network route-table create -g $rg --name sdwan-trusted-udr --location $location -o none
+
+# List all vnets in the resource group that contains az
+vnets=$(az network vnet list -g $rg --query "[?contains(name, 'az')].name" -o tsv)
+fwfrontendIp=$(az network lb show -g $rg --name az-hub-opnfw --query "frontendIPConfigurations[].privateIPAddress" -o tsv)
+# List the address prefixes of the vnets
+for vnet in $vnets
+do
+  addressPrefixes=$(az network vnet show -g $rg -n $vnet --query addressSpace.addressPrefixes -o tsv)
+  az network route-table route create -g $rg --route-table-name sdwan-trusted-udr --name $vnet --address-prefix $addressPrefixes --next-hop-type VirtualAppliance --next-hop-ip-address $fwfrontendIp -o none
+done
+
+# Associate the sdwan-trusted-udr to the sdwan-trusted subnet
+echo Associating the sdwan-trusted-udr to the sdwan-trusted subnet
+az network vnet subnet update -g $rg --vnet-name az-hub-vnet --name sdwan-trusted --route-table sdwan-trusted-udr -o none
+
+
+
+
+
+
+
+
