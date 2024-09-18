@@ -29,3 +29,26 @@ az network vnet peering create --name hub-to-spk1 --resource-group $rg --vnet-na
 az network vnet peering create --name hub-to-spk2 --resource-group $rg --vnet-name $hubvnet --remote-vnet az-spk2-vnet --allow-vnet-access -o none --allow-gateway-transit true
 az network vnet peering create --name spk1-to-hub --resource-group $rg --vnet-name az-spk1-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true
 az network vnet peering create --name spk2-to-hub --resource-group $rg --vnet-name az-spk2-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true
+
+# Create mainsubnet on hubvnet
+az network vnet subnet create --name main --resource-group $rg --vnet-name $hubvnet --address-prefixes 10.0.0.0/27 -o none
+
+# Create Azure Route Server subnet
+az network vnet subnet create --name AzureRouteServerSubnet --resource-group $rg --vnet-name $hubvnet --address-prefixes 10.0.0.64/26 -o none
+
+# Create Azure Route Server Public IP
+az network public-ip create --name az-hub-ars-pip --resource-group $rg --location $region --sku Standard --allocation-method Static -o none
+# Get Azure Route Server subnet id
+subnetid=$(az network vnet subnet show --name AzureRouteServerSubnet --resource-group $rg --vnet-name $hubvnet --query id -o tsv)
+# Create Azure Route Server
+az network routeserver create --name az-hub-ars --resource-group $rg --hosted-subnet $subnetid --public-ip-address az-hub-ars-pip --location $region -o none --hub-routing-preference ASPath
+
+#ExpressRoute specific variables
+ername1="azure-er-circuit2" 
+perloc1="Washington DC"
+providerloc1=Megaport
+ername2="branch-er-circuit"
+perloc2="Washington DC"
+providerloc2=Megaport
+
+az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l eastus2 --sku-family MeteredData --sku-tier Standard -o none
