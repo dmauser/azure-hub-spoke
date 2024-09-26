@@ -1280,13 +1280,13 @@
       <disabled>0</disabled>
     </route>
     <route uuid="a3a55932-81a6-4dc5-b83f-050ed0163195">
-      <network>10.14.1.4/32</network>
+      <network>10.13.1.4/32</network>
       <gateway>WAN_DHCP</gateway>
       <descr/>
       <disabled>0</disabled>
     </route>
     <route uuid="50554202-6d72-439a-a880-c28d15446356">
-      <network>10.14.1.5/32</network>
+      <network>10.13.1.5/32</network>
       <gateway>WAN_DHCP</gateway>
       <descr/>
       <disabled>0</disabled>
@@ -1312,7 +1312,7 @@
       <hash-algorithm>sha256</hash-algorithm>
       <noinstallpolicy>1</noinstallpolicy>
       <private-key/>
-      <remote-gateway>10.14.1.4</remote-gateway>
+      <remote-gateway>10.13.1.4</remote-gateway>
     </phase1>
     <phase1>
       <iketype>ikev2</iketype>
@@ -1332,7 +1332,7 @@
       <hash-algorithm>sha256</hash-algorithm>
       <noinstallpolicy>1</noinstallpolicy>
       <private-key/>
-      <remote-gateway>10.14.1.5</remote-gateway>
+      <remote-gateway>10.13.1.5</remote-gateway>
       <ikeid>2</ikeid>
     </phase1>
     <phase2>

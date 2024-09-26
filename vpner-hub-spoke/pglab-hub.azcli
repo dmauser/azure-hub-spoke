@@ -1,13 +1,10 @@
-rg=tipnode-rg-9112
+rg=tipnode-rg-9252
 region=eastus2euap
 username=azureuser
 password="Msft123Msft123" #Please change your password
 vmsize=Standard_DS1_v2 #VM Size
 mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
-hubvnet=tipnode-vnet-9112
-
-# Set Azure Subscription
-az account set --subscription 7afd8f92-c220-4f53-886e-1df53a69afd4
+hubvnet=tipnode-vnet-9252
 
 # Create vnet az-spk1-vnet and az-spk2-vnet
 az network vnet create --name az-spk1-vnet --resource-group $rg --location $region --address-prefix 10.0.1.0/24 --subnet-name main --subnet-prefix 10.0.1.0/27 -o none
@@ -30,25 +27,35 @@ az network vnet peering create --name hub-to-spk2 --resource-group $rg --vnet-na
 az network vnet peering create --name spk1-to-hub --resource-group $rg --vnet-name az-spk1-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true
 az network vnet peering create --name spk2-to-hub --resource-group $rg --vnet-name az-spk2-vnet --remote-vnet $hubvnet --allow-vnet-access -o none --use-remote-gateways true
 
+# Get existing vnet address space and parse as parameter
+vnetaddress=$(az network vnet show --name $hubvnet --resource-group $rg --query addressSpace.addressPrefixes[0] -o tsv)
+
+# Add VNET prefix to hubvnet
+az network vnet update --name $hubvnet --resource-group $rg --address-prefixes $vnetaddress 10.0.0.0/24 -o none
+
 # Create mainsubnet on hubvnet
 az network vnet subnet create --name main --resource-group $rg --vnet-name $hubvnet --address-prefixes 10.0.0.0/27 -o none
 
 # Create Azure Route Server subnet
-az network vnet subnet create --name AzureRouteServerSubnet --resource-group $rg --vnet-name $hubvnet --address-prefixes 10.0.0.64/26 -o none
+az network vnet subnet create --name RouteServerSubnet --resource-group $rg --vnet-name $hubvnet --address-prefixes 10.0.0.64/26 -o none
 
 # Create Azure Route Server Public IP
 az network public-ip create --name az-hub-ars-pip --resource-group $rg --location $region --sku Standard --allocation-method Static -o none
 # Get Azure Route Server subnet id
-subnetid=$(az network vnet subnet show --name AzureRouteServerSubnet --resource-group $rg --vnet-name $hubvnet --query id -o tsv)
+subnetid=$(az network vnet subnet show --name RouteServerSubnet --resource-group $rg --vnet-name $hubvnet --query id -o tsv)
 # Create Azure Route Server
-az network routeserver create --name az-hub-ars --resource-group $rg --hosted-subnet $subnetid --public-ip-address az-hub-ars-pip --location $region -o none --hub-routing-preference ASPath
+az network routeserver create --name az-hub-ars2 --resource-group $rg --hosted-subnet $subnetid --public-ip-address az-hub-ars-pip --location $region -o none --hub-routing-preference ASPath
 
-#ExpressRoute specific variables
-ername1="azure-er-circuit2" 
-perloc1="Washington DC"
-providerloc1=Megaport
-ername2="branch-er-circuit"
-perloc2="Washington DC"
-providerloc2=Megaport
+#Create ExpressRoute Gateway
+echo Creating Branch ExpressRoute Gateway
+az network public-ip create --name az-hub-ergw-pip --resource-group $rg --location $region -o none --sku Standard
+az network vnet-gateway create --name az-hub-ergw --resource-group $rg --location $region --public-ip-address az-hub-ergw-pip --vnet $hubvnet --gateway-type "ExpressRoute" --sku "Standard" --allow-remote-vnet-traffic true --no-wait
+# Check Expressroute Gateway provisioning state
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n az-hub-ergw  -g $rg  --query 'provisioningState' -o tsv)
+    echo "Expressroute Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
 
-az network express-route create --bandwidth 50 -n $ername1 --peering-location "$perloc1" -g $rg --provider $providerloc1 -l eastus2 --sku-family MeteredData --sku-tier Standard -o none
