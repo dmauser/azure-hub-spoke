@@ -1,4 +1,4 @@
-# Pre-Requisites
+branch# Pre-Requisites
 
 # Set Azure Subscription
 az account set --subscription dmauser-fdpo
@@ -10,6 +10,7 @@ username=azureuser
 password="Msft123Msft123" #Please change your password
 vmsize=Standard_DS1_v2 #VM Size
 mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+AzurehubName=tipnode-vnet-9258
 
 # Create resource group
 az group create --name $rg --location $region -o none
@@ -135,6 +136,16 @@ do
  --protected-settings "{\"fileUris\": [\"$nettoolsuri\"],\"commandToExecute\": \"./nettools.sh\"}" \
  --no-wait
 done
+
+# 1) Force VM traffic to go over OPNSense NVA using UDR
+# Create UDR with disable GatewayPropagation to branch
+az network route-table create -g $rg -n branch-forcevpn-udr --disable-bgp-route-propagation true -o none
+# Add default to branch-forcevpn-udr to openvpn trusted interface
+nvatrustedip=$(az network nic show -g $rg -n $virtualMachineName-Trusted-NIC --query ipConfigurations[0].privateIPAddress -o tsv)
+az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n default --address-prefix 0.0.0.0/0 --next-hop-type VirtualAppliance --next-hop-ip-address $nvatrustedip -o none
+az network route-table route create -g $rg --route-table-name branch-forcevpn-udr -n exception --address-prefix $mypip/32 --next-hop-type Internet -o none
+# Associate route table to subnet1 on branch vnet
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --route-table branch-forcevpn-udr -o none
 
 #Enabling boot diagnostics for all VMs in the resource group (Serial console)
 echo Enabling boot diagnostics

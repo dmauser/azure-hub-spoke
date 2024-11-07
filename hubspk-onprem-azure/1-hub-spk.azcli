@@ -1,8 +1,10 @@
 #Parameters
 rg=lab-hub-onprem #Define your resource group
-location=southcentralus #Set location
+read -p "Enter your location (default: eastus2): " location
+location=${location:-eastus2} # Prompt for location, default to eastus2 if not provided
 username=azureuser #Set username
-password=Msft123Msft123 #Set password
+read -p "Enter your password (default: Msft123Msft123): " password
+password=${password:-Msft123Msft123} # Prompt for password, default to Msft123Msft123 if not provided
 virtualMachineSize=Standard_DS1_v2 #Set VM size
 
 #Variables
