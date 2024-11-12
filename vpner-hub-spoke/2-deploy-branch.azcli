@@ -34,7 +34,7 @@ az network bastion create --name $branchname-bastion --public-ip-addres $branchn
 echo Creating Branch ExpressRoute Gateway
 az network vnet subnet create --address-prefix 10.100.0.32/27 --name GatewaySubnet -g $rg --vnet-name $branchname-vnet --output none
 az network public-ip create --name branch-ergw-pip --resource-group $rg --location $region -o none --sku Standard
-az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet $branchname-vnet --gateway-type "ExpressRoute" --sku "Standard" --no-wait
+az network vnet-gateway create --name branch-ergw --resource-group $rg --location $region --public-ip-address branch-ergw-pip --vnet $branchname-vnet --gateway-type "ExpressRoute" --sku "Standard" --allow-remote-vnet-traffic true --no-wait
 
 # Loop script to check ER Gateways provisioning state
 echo Validating ER Gateways provisioning...
@@ -48,7 +48,7 @@ done
 
 # Enabling VNET transit over ER
 echo Enabling VNET transit over ER
-az network vnet-gateway update --name  branch-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
+az network vnet-gateway create --name az-hub-ergw --resource-group $rg --location $region --public-ip-address az-hub-ergw-pip --vnet $AzurehubName --gateway-type "ExpressRoute" --sku "Standard" --allow-remote-vnet-traffic true --no-wait
 
 # Loop script to check ER Gateways provisioning state
 echo Validating ER Gateways provisioning...
