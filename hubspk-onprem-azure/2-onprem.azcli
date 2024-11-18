@@ -1,0 +1,60 @@
+# Pre-Requisites
+
+#Parameters
+rg=lab-hs-branch
+username=azureuser
+branchname=branch
+vmsize=Standard_DS1_v2 #VM Size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+#Variables
+read -p "Enter your location (default: eastus2): " location
+location=${location:-eastus2} # Prompt for location, default to eastus2 if not provided
+username=azureuser #Set username
+read -p "Enter your password (default: Msft123Msft123): " password
+password=${password:-Msft123Msft123} # Prompt for password, default to Msft123Msft123 if not provided
+
+
+#Variables
+mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NSG to restrict access to SSH only for your Public IP.
+
+# Create Resource Group
+az group create --name $rg --location $location -o none
+
+# Create Branch VNET
+az network vnet create --name $branchname-vnet --resource-group $rg --location $location --address-prefix 10.100.0.0/24 --subnet-name subnet1 --subnet-prefix 10.100.0.96/27 --location $location -o none
+# Create Ubuntu VM on subnet1 
+az vm create -n $branchname-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $location --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+
+# Create Azure Bastion subnet on branchname-vnet
+az network vnet subnet create --name AzureBastionSubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefixes 10.100.0.192/26 -o none
+# Create Azure bastion Public IP
+az network public-ip create --name $branchname-bastion-pip --resource-group $rg --location $location --allocation-method Static --sku Standard -o none --only-show-errors
+# Deploy Azure Bastion on branchname-vnet
+az network bastion create --name $branchname-bastion --public-ip-addres $branchname-bastion-pip  --resource-group $rg --vnet-name $branchname-vnet --location $location -o none --no-wait
+
+#Create ExpressRoute Gateway
+echo Creating Branch ExpressRoute Gateway
+az network vnet subnet create --address-prefix 10.100.0.32/27 --name GatewaySubnet -g $rg --vnet-name $branchname-vnet --output none
+az network public-ip create --name branch-ergw-pip --resource-group $rg --location $location -o none --sku Standard
+az network vnet-gateway create --name branch-ergw --resource-group $rg --location $location --public-ip-address branch-ergw-pip --vnet $branchname-vnet --gateway-type "ExpressRoute" --sku "Standard" --allow-remote-vnet-traffic true --no-wait
+
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "Branch ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done
+
+# Loop script to check ER Gateways provisioning state
+echo Validating ER Gateways provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
+    echo "Branch ER Gateway provisioning state provisioningState="$prState
+    sleep 5
+done

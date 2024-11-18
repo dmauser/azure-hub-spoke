@@ -1,5 +1,5 @@
 #Parameters
-rg=lab-hub-onprem #Define your resource group
+rg=lab-hs-azure #Define your resource group
 read -p "Enter your location (default: eastus2): " location
 location=${location:-eastus2} # Prompt for location, default to eastus2 if not provided
 username=azureuser #Set username
@@ -19,10 +19,10 @@ AzurehubgatewaySubnetPrefix=10.0.0.32/27 #Azure Hub Gateway Subnet address prefi
 AzureFirewallPrefix=10.0.0.64/26 #Azure Firewall Prefix
 AzurehubrssubnetPrefix=10.0.0.128/27 #Azure Hub Route Server subnet address prefix
 AzureHubBastionSubnet=10.0.0.192/26
-Azurespoke1Name=az-spk11 #Azure Spoke 1 name
+Azurespoke1Name=az-spk1 #Azure Spoke 1 name
 Azurespoke1AddressSpacePrefix=10.0.1.0/24 # Azure Spoke 1 VNET address space
 Azurespoke1Subnet1Prefix=10.0.1.0/27 # Azure Spoke 1 Subnet1 address prefix
-Azurespoke2Name=az-spk12 #Azure Spoke 2 name
+Azurespoke2Name=az-spk2 #Azure Spoke 2 name
 Azurespoke2AddressSpacePrefix=10.0.2.0/24 # Azure Spoke 1 VNET address space
 Azurespoke2Subnet1Prefix=10.0.2.0/27 # Azure Spoke 1 VNET address space
 
@@ -33,7 +33,23 @@ JsonAzure={\"hubName\":\"$AzurehubName\",\"addressSpacePrefix\":\"$Azurehubaddre
 echo Deploying base lab: Hub with Spoke1 and 2. VMs and Azure Route Server.
 echo "*** It will take around 20 minutes to finish the deployment ***"
 az group create --name $rg --location $location --output none
-az deployment group create --name lab-$RANDOM --resource-group $rg \
+az deployment group create --name lab-hubspk --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeployv5.json \
 --parameters Restrict_SSH_VM_AccessByPublicIP=$mypip deployHubERGateway=true Azure=$JsonAzure VmAdminUsername=$username VmAdminPassword=$password virtualMachineSize=$virtualMachineSize deployBastion=true \
---output none
+--output none \
+--no-wait
+
+# Check deployment lab-hubspk status and only continue after succeeded state
+while true
+do
+  status=$(az deployment group show --name lab-hubspk --resource-group $rg --query properties.provisioningState -o tsv)
+  if [ "$status" = "Succeeded" ]; then
+    echo "lab-hubspk deployment succeeded!"
+    break
+  fi
+  echo Checking for lab-hubspk deployment status: $status
+  sleep 15
+done
+
+# ERGW allow-remote-vnet-traffic
+az network vnet-gateway update --name az-hub-ergw --resource-group $rg --allow-remote-vnet-traffic true --no-wait
