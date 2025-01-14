@@ -1,9 +1,8 @@
 # Hub and Spoke Lab
 
 ## Intro
-This lab is designed to deploy a hub and spoke network topology in Azure. The lab will deploy a hub virtual network with a virtual network gateway and two spoke virtual networks. The lab will also deploy a virtual machine in each spoke virtual network. The lab will also deploy a virtual network gateway in the hub virtual network and establish a ExpressRoute connection between the hub virtual network and an on-premises (aka branch) network.
 
-The lab also will deploy the emulated Azure on-premises with a virtual network gateway (VNG) and a virtual machine in the on-premises virtual network.
+This lab sets up a hub and spoke network topology in Azure, including virtual network gateways and virtual machines in each network. It also establishes an ExpressRoute connection between the Azure hub and an emulated on-premises network.
 
 ## Pre-requisites
 
