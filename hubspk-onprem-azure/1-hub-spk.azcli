@@ -1,9 +1,17 @@
 #Parameters
-rg=lab-hs-azure #Define your resource group
+rg=lab-hs-azhub #Define your resource group
 read -p "Enter your location (default: eastus2): " location
 location=${location:-eastus2} # Prompt for location, default to eastus2 if not provided
-username=azureuser #Set username
-read -p "Enter your password (default: Msft123Msft123): " password
+read -p "Enter your username (default: azureuser): " username
+username=${username:-azureuser} # Prompt for username, default to azureuser if not provided
+while true; do
+  read -s -p "Enter your password (default: Msft123Msft123): " password
+  echo
+  read -s -p "Confirm your password: " password_confirm
+  echo
+  [ "$password" = "$password_confirm" ] && break
+  echo "Passwords do not match. Please try again."
+done
 password=${password:-Msft123Msft123} # Prompt for password, default to Msft123Msft123 if not provided
 virtualMachineSize=Standard_DS1_v2 #Set VM size
 

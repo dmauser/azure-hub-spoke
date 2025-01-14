@@ -1,0 +1,125 @@
+# Parameters
+azurerg=lab-hs-azure
+branchrg=lab-hs-branch
+# Prompt for az-hub resource group
+branchlocation=$(az group show -n $branchrg --query location -o tsv)
+azurelocation=$(az group show -n $azurerg --query location -o tsv)
+
+# Define ExpressRoute parameters
+ername1=az-er-branch # ExpressRoute Circuit Name
+ername2=az-er-azure
+edge1="Dallas" #Set branch peering Location
+edge2="Dallas" #Set azure Hub peering Location
+provider=Megaport # Provider
+
+# 1) Create ExpressRoute Circuit
+# In this example ExpressRoute is created in "Washington DC" using Mepgaport as Provider. Make the necessary changes based on your needs
+az network express-route create --bandwidth 50 -n $ername1 --peering-location "$edge1" -g $branchrg --provider $provider -l $branchlocation --sku-family MeteredData --sku-tier Standard -o none
+az network express-route create --bandwidth 50 -n $ername2 --peering-location "$edge2" -g $azurerg --provider $provider -l $azurelocation --sku-family MeteredData --sku-tier Standard -o none
+
+# Check the ExpressRoute Circuit provisioning state using a loop script
+while true; do
+    state1=$(az network express-route show -n $ername1 -g $branchrg --query provisioningState -o tsv)
+    state2=$(az network express-route show -n $ername2 -g $azurerg --query provisioningState -o tsv)
+    if [ $state1 == "Succeeded" ] && [ $state2 == "Succeeded" ]; then
+        break
+    fi
+    echo "Waiting for ExpressRoute Circuit to be provisioned..."
+    sleep 10
+done
+
+# Get the expressroute servicekey
+echo "ExpressRoute Service Key for $ername1: " $(az network express-route show -n $ername1 -g $branchrg --query serviceKey -o tsv)
+echo "ExpressRoute Service Key for $ername2: " $(az network express-route show -n $ername2 -g $azurerg --query serviceKey -o tsv)
+
+# Pause and press any key to continue
+read -n 1 -s -r -p "Proceed with Megaport Provisining and press any key to continue"
+
+# 2) - Provision ExpressRoute Circuit with you provider
+
+# Loop script to continue only when express route provider provisioning state is "Provisioned"
+while true; do
+    state1=$(az network express-route show -n $ername1 -g $branchrg --query serviceProviderProvisioningState -o tsv)
+    state2=$(az network express-route show -n $ername2 -g $azurerg --query serviceProviderProvisioningState -o tsv)
+    if [ $state1 == "Provisioned" ] && [ $state2 == "Provisioned" ]; then
+        break
+    fi
+    echo "Waiting for ExpressRoute Circuit to be provisioned..."
+    sleep 10
+done
+
+# List all expressroute gateways on the $branchrg and $azurerg and for each gateway, and add loop script to conintue only if each gateway is provisioned
+# Loop to continue only if each gateway in $branchrg is provisioned
+while true; do
+    all_provisioned=true
+    for gw in $(az network vnet-gateway list -g $branchrg --query [].name -o tsv); do
+        state=$(az network vnet-gateway show -n $gw -g $branchrg --query provisioningState -o tsv)
+        echo "VNET ERGW $gw provisioning state: $state"
+        if [ $state != "Succeeded" ]; then
+            all_provisioned=false
+            break
+        fi
+    done
+    if [ "$all_provisioned" = true ]; then
+        echo "All VNET ERGW in $branchrg are provisioned."
+        break
+    else
+        echo "Waiting for all VNET ERGW in $branchrg to be provisioned..."
+        sleep 10
+    fi
+done
+
+# Loop to continue only if each gateway in $azurerg is provisioned
+while true; do
+    all_provisioned=true
+    temp_provisioned=true
+    az network vnet-gateway list -g $azurerg --query "[?contains(name, 'ergw')].name" -o tsv | while read -r gw; do
+        state=$(az network vnet-gateway show -n $gw -g $azurerg --query provisioningState -o tsv)
+        echo "VNET ERGW $gw provisioning state: $state"
+        if [ $state != "Succeeded" ]; then
+            temp_provisioned=false
+        fi
+    done
+    all_provisioned=$temp_provisioned
+    if [ "$all_provisioned" = true ]; then
+        echo "All VNET ERGW in $azurerg are provisioned."
+        break
+    else
+        echo "Waiting for all VNET ERGW in $azurerg to be provisioned..."
+        sleep 10
+    fi
+done
+
+# Connect branch to $ername1 to branchrg
+echo connecting $ername1 to $branchrg
+erid=$(az network express-route show -g $branchrg --name $ername1 --query id -o tsv)
+az network vpn-connection create --name connection-to-$ername1 \
+ --resource-group $branchrg --vnet-gateway1 $(az network vnet-gateway list -g $branchrg --query "[?contains(name, 'ergw')].name" -o tsv) \
+ --express-route-circuit2 $erid \
+ --routing-weight 0 \
+ &>/dev/null &
+
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vpn-connection show --name connection-to-$ername1 -g $branchrg --query 'provisioningState' -o tsv)
+    echo "ER connection connection-to-$ername1 provisioningState="$prState
+    sleep 5
+done
+
+# Connect branch to $ername2 to azurerg
+echo connecting $ername2 to $azurerg
+erid=$(az network express-route show -g $azurerg --name $ername2 --query id -o tsv)
+az network vpn-connection create --name connection-to-$ername2 \
+ --resource-group $azurerg --vnet-gateway1 $(az network vnet-gateway list -g $azurerg --query "[?contains(name, 'ergw')].name" -o tsv) \
+ --express-route-circuit2 $erid \
+ --routing-weight 0 \
+ &>/dev/null &
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vpn-connection show --name connection-to-$ername2 -g $azurerg --query 'provisioningState' -o tsv)
+    echo "ER connection connection-to-$ername2 provisioningState="$prState
+    sleep 5
+done
+
