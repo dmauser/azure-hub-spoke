@@ -35,7 +35,7 @@ echo Creating trusted subnet
 az network vnet subnet create -g $rg-$hub1name --vnet-name az-$hub1name-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
 
 echo "Deploying OPNsense NVA1 on the az-$hub1name"
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name az-$hub1name-nva-$RANDOM --resource-group $rg-$hub1name \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$hub1location \
@@ -129,7 +129,7 @@ echo Creating trusted subnet
 az network vnet subnet create -g $rg-$hub2name --vnet-name az-$hub2name-vnet --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
 
 echo "Deploying OPNsense NVA1 on the az-$hub2name"
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name az-$hub2name-nva-$RANDOM --resource-group $rg-$hub2name \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$hub2location \

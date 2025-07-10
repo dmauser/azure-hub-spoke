@@ -1,0 +1,16 @@
+rg=lab-hs-branch
+branchname=branch
+
+# Review Azure Route Server configuration:
+# **** Azure Route Server ****
+# RS instance IPs
+echo Router Server name $rsname: && \
+echo Route Server IPs: && \
+az network routeserver show --name $branchname-rs --resource-group $rg --query 'virtualRouterIps[]' -o tsv
+
+# Review Az-Hub ExpressRoute Gateway BGP peers and learned routes
+echo ExpressRoute Gateway name $branchname-ergw: && \
+echo ExpressRoute Gateway BGP peers: && \
+az network vnet-gateway list-bgp-peer-status --name $branchname-ergw --resource-group $rg -o table && \
+echo ExpressRoute Gateway learned routes: && \
+az network vnet-gateway list-learned-routes --name $branchname-ergw --resource-group $rg -o table

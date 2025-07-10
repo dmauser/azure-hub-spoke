@@ -1,0 +1,132 @@
+rg=lab-hs-branch
+branchname=branch
+location=$(az group show -n $rg --query location -o tsv)
+virtualMachineSize=Standard_DS1_v2 #Set VM size
+mypip=$(curl -4 ifconfig.io -s) #Replace with your home Public IP in case you run this over Cloudshell
+
+
+# OPNsense NVA1 parameters
+ShellScriptName=configureopnsense.sh
+scenarioOption="TwoNics"
+virtualMachineSize=Standard_DS1_v2
+virtualMachineName=$branchname-opnnva
+virtualNetworkName=$branchname-vnet
+existingvirtualNetwork=existing
+UntrustedSubnetCIDR=192.168.100.0/28
+TrustedSubnetCIDR=192.168.100.16/28
+GatewaySubnet=192.168.100.32/27
+RouteServerSubnet=192.168.100.128/27
+subnet1=192.168.100.96/27
+subnet2=192.168.100.160/27
+existingUntrustedSubnetName=untrusted
+existingTrustedSubnetName=trusted
+
+# Create untrusted subnetnet
+echo Creating untrusted subnet
+az network vnet subnet create -g $rg --vnet-name $virtualNetworkName --name $existingUntrustedSubnetName --address-prefixes $UntrustedSubnetCIDR --output none
+# Create trusted subnetnet
+echo Creating trusted subnet
+az network vnet subnet create -g $rg --vnet-name $virtualNetworkName --name $existingTrustedSubnetName --address-prefixes $TrustedSubnetCIDR --output none
+
+echo "Deploying OPNsense NVA1 on the $branchname"
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
+az deployment group create --name $branchname-nva-$RANDOM --resource-group $rg \
+--template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
+--parameters scenarioOption=$scenarioOption virtualMachineName=$virtualMachineName virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
+--no-wait
+
+#Create Route Server
+echo Creating $branchname Route Server
+az network vnet subnet create --address-prefix $RouteServerSubnet --name RouteServerSubnet -g $rg --vnet-name $virtualNetworkName --output none
+subnetid=$(az network vnet subnet show --name RouteServerSubnet -g $rg --vnet-name $virtualNetworkName --query id -o tsv)
+az network public-ip create --name $branchname-rs-pip --resource-group $rg --location $location -o none
+az network routeserver create --name $branchname-rs --resource-group $rg --location $location --public-ip-address $branchname-rs-pip --hosted-subnet $subnetid --hub-routing-preference ASPath &>/dev/null &
+
+# Create NSG
+echo Creating default NSG
+az network nsg create --resource-group $rg --name $location-default-nsg --location $location -o none
+#Updating NSGs:
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp500 --priority 100 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp4500 --priority 101 --source-address-prefixes '*' --destination-address-prefixes '*' --destination-port-ranges 4500 --direction Inbound --access Allow --protocol Udp -o none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 320 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
+az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-out' --direction outbound --priority 330 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
+# Associating NSG to the VNET subnets 
+az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+
+echo Adjusting OPNsense NSGs
+echo Checking subnet status...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name $existingTrustedSubnetName -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Trusted subnet "provisioningState="$prState
+    sleep 5
+done
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network vnet subnet show --name $existingUntrustedSubnetName -g $rg --vnet-name $virtualNetworkName --query provisioningState -o tsv)
+    echo Unrusted subnet "provisioningState="$prState
+    sleep 5
+done
+
+# echo Checking OPNSense provisioning state:
+# az deployment group show --name dc1-opnnva-TwoNics -g $rg --query properties.provisioningState -o tsv
+# Ensure default NSG is associated to OPNSense Trusted and Untrusted Networks
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group "" -o none
+# az network vnet subnet update --id $(az network vnet subnet list -g $rg --vnet-name $virtualNetworkName --query '[?contains(name,`'-Subnet'`)].id' -o tsv) --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name $existingTrustedSubnetName --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name $existingUntrustedSubnetName --resource-group $rg --vnet-name $virtualNetworkName --network-security-group null  -o none
+az network vnet subnet update --name $existingTrustedSubnetName --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+az network vnet subnet update --name $existingUntrustedSubnetName --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
+# Misc remove NSG from OPNSense NICs 
+az network nic update -g $rg -n $virtualMachineName-Trusted-NIC --network-security-group null --output none
+az network nic update -g $rg -n $virtualMachineName-Untrusted-NIC --network-security-group null --output none
+
+# Enable B2B on ARS
+echo Enabling B2B on Route Server
+az network routeserver update --name $branchname-rs --resource-group $rg --allow-b2b-traffic true --no-wait
+
+# Loop script to validate route server provisioning state
+echo Validating Route Server provisioning...
+prState=''
+while [[ $prState != 'Succeeded' ]];
+do
+    prState=$(az network routeserver show -n $branchname-rs -g $rg --query 'provisioningState' -o tsv)
+    echo "Route Server provisioning state provisioningState="$prState
+    sleep 5
+done
+
+# Peer with Route Server
+asn_nva=65002
+echo Peering NVAs with Route Server
+nvasdwans=$(az vm list -g $rg --query '[?contains(name,`'nva'`)].name' -o tsv)
+for nvaintname in $nvasdwans
+do
+ #NVA BGP config variables (do not change)
+ routeserver_IP1=$(az network routeserver show --name $branchname-rs --resource-group $rg --query 'virtualRouterIps[0]' -o tsv)
+ routeserver_IP2=$(az network routeserver show --name $branchname-rs --resource-group $rg --query 'virtualRouterIps[1]' -o tsv)
+
+ # Building Route Server BGP Peering
+ echo Building BGP Peering between $AzurehubName-routeserver and $nvaintname
+ az network routeserver peering create --resource-group $rg --routeserver $branchname-rs --name $nvaintname --peer-asn $asn_nva \
+ --peer-ip $(az network nic show --name "$nvaintname"-Trusted-NIC --resource-group $rg --query ipConfigurations[0].privateIPAddress -o tsv) \
+ --output none
+done
+
+
+
+### Installing tools for networking connectivity validation such as traceroute, tcptraceroute, iperf and others (check link below for more details) 
+echo "Installing net utilities inside VMs (traceroute, tcptraceroute, iperf3, hping3, and others)"
+nettoolsuri="https://raw.githubusercontent.com/dmauser/azure-vm-net-tools/main/script/nettools.sh"
+for vm in `az vm list -g $rg --query "[?storageProfile.imageReference.offer=='UbuntuServer'].name" -o tsv`
+do
+ az vm extension set \
+ --resource-group $rg \
+ --vm-name $vm \
+ --name customScript \
+ --publisher Microsoft.Azure.Extensions \
+ --protected-settings "{\"fileUris\": [\"$nettoolsuri\"],\"commandToExecute\": \"./nettools.sh\"}" \
+ --no-wait
+done

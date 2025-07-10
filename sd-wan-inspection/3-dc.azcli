@@ -68,7 +68,7 @@ az network nsg rule create -g $rg --nsg-name $location-default-nsg -n allow-udp4
 az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'default-allow-https' --direction Inbound --priority 310 --source-address-prefixes $mypip --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges 443 --access Allow --protocol Tcp --description "Allow inbound HTTPS" --output none
 az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-in' --direction Inbound --priority 320 --source-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16  --source-port-ranges '*' --destination-address-prefixes  10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-in" --output none
 az network nsg rule create -g $rg --nsg-name $location-default-nsg -n 'allow-rfc1918-out' --direction outbound --priority 330 --source-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --source-port-ranges '*' --destination-address-prefixes 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 --destination-port-ranges '*' --access Allow --protocol '*' --description "allow-rfc1918-out" --output none
-# Associating NSG to the VNET subnets (Spokes and dc1es)
+# Associating NSG to the VNET subnets 
 az network vnet subnet update --name subnet1 --resource-group $rg --vnet-name $virtualNetworkName --network-security-group $location-default-nsg -o none
 
 # Create UDR to 10.0.0.0/8 to point to NVA

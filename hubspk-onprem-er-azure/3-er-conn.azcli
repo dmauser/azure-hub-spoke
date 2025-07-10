@@ -8,8 +8,8 @@ azurelocation=$(az group show -n $azurerg --query location -o tsv)
 # Define ExpressRoute parameters
 ername1=az-er-branch # ExpressRoute Circuit Name
 ername2=az-er-azure
-edge1="Dallas" #Set branch peering Location
-edge2="Dallas" #Set azure Hub peering Location
+edge1="Washington DC" #Set branch peering Location
+edge2="Washington DC" #Set azure Hub peering Location
 provider=Megaport # Provider
 
 # 1) Create ExpressRoute Circuit

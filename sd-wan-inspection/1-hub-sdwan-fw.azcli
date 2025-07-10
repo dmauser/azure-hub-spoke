@@ -65,7 +65,7 @@ az network vnet subnet create -g $rg --vnet-name $AzurehubName-vnet --name $exis
 
 echo "Deploying OPNsense NVA1 on the $AzurehubName"
 nvasdwan1=$AzurehubName-sdwan1
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name $AzurehubName-nva-sdwan1 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan1 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
@@ -73,7 +73,7 @@ az deployment group create --name $AzurehubName-nva-sdwan1 --resource-group $rg 
 
 nvasdwan2=$AzurehubName-sdwan2
 echo "Deploying OPNsense NVA2 on the $AzurehubName"
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name $AzurehubName-nva-sdwan2 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvasdwan2 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
@@ -173,7 +173,7 @@ az network vnet subnet create -g $rg --vnet-name $AzurehubName-vnet --name $exis
 
 echo "Deploying OPNsense NVA1 on the $AzurehubName"
 nvafw1=$AzurehubName-opnfw1
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name $AzurehubName-nva-$nvafw1 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvafw1 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \
@@ -181,7 +181,7 @@ az deployment group create --name $AzurehubName-nva-$nvafw1 --resource-group $rg
 
 echo "Deploying OPNsense NVA1 on the $AzurehubName"
 nvafw2=$AzurehubName-opnfw2
-az vm image terms accept --urn thefreebsdfoundation:freebsd-13_1:13_1-release:13.1.0 -o none
+az vm image terms accept --urn thefreebsdfoundation:freebsd-14_1:14_1-release-amd64-gen2-zfs:14.1.0 -o none
 az deployment group create --name $AzurehubName-nva-$nvafw2 --resource-group $rg \
 --template-uri "https://raw.githubusercontent.com/dmauser/opnazure/master/ARM/main.json" \
 --parameters scenarioOption=$scenarioOption virtualMachineName=$nvafw2 virtualMachineSize=$virtualMachineSize existingvirtualNetwork=$existingvirtualNetwork VNETAddress="[\"$VNETAddress\"]" virtualNetworkName=$virtualNetworkName UntrustedSubnetCIDR=$UntrustedSubnetCIDR TrustedSubnetCIDR=$TrustedSubnetCIDR existingUntrustedSubnetName=$existingUntrustedSubnetName existingTrustedSubnetName=$existingTrustedSubnetName Location=$location \

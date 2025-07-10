@@ -1,6 +1,11 @@
 #Parameters
-rg=lab-hs-branch
-branchname=branch
+rg=lab-hs-branch2
+branchname=branch2
+vnetaddress=192.168.200.0/24
+
+#variables (don't change)
+vnetprefix=$(echo $vnetaddress | grep -o -E '([0-9]+\.){3}' | sed 's/.$//')
+
 vmsize=Standard_DS1_v2 #VM Size
 # Set region unsername and password
 read -p "Enter your location (default: eastus2): " location
@@ -23,12 +28,13 @@ mypip=$(curl -4 ifconfig.io -s) #Captures your local Public IP and adds it to NS
 az group create --name $rg --location $location -o none
 
 # Create Branch VNET
-az network vnet create --name $branchname-vnet --resource-group $rg --location $location --address-prefix 172.16.0.0/24 --subnet-name subnet1 --subnet-prefix 172.16.0.96/27 --location $location -o none
+az network vnet create --name $branchname-vnet --resource-group $rg --location $location --address-prefix $vnetaddress --subnet-name subnet1 --subnet-prefix $vnetprefix.96/27 --location $location -o none
 # Create Ubuntu VM on subnet1 
-az vm create -n $branchname-vm1  -g $rg --image Ubuntu2204 --public-ip-sku Standard --size $vmsize -l $location --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors
+az vm create -n $branchname-vm1  -g $rg --image Ubuntu2204 --size $vmsize -l $location --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors --public-ip-address ""
+az vm create -n $branchname-vm2  -g $rg --image Ubuntu2204 --size $vmsize -l $location --subnet subnet1 --vnet-name $branchname-vnet --admin-username $username --admin-password $password --nsg "" --no-wait --only-show-errors --public-ip-address ""
 
 # Create Azure Bastion subnet on branchname-vnet
-az network vnet subnet create --name AzureBastionSubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefixes 172.16.0.192/26 -o none
+az network vnet subnet create --name AzureBastionSubnet --resource-group $rg --vnet-name $branchname-vnet --address-prefixes $vnetprefix.192/26 -o none
 # Create Azure bastion Public IP
 az network public-ip create --name $branchname-bastion-pip --resource-group $rg --location $location --allocation-method Static --sku Standard -o none --only-show-errors
 # Deploy Azure Bastion on branchname-vnet
@@ -36,19 +42,9 @@ az network bastion create --name $branchname-bastion --public-ip-addres $branchn
 
 #Create ExpressRoute Gateway
 echo Creating Branch ExpressRoute Gateway
-az network vnet subnet create --address-prefix 172.16.0.32/27 --name GatewaySubnet -g $rg --vnet-name $branchname-vnet --output none
+az network vnet subnet create --address-prefix $vnetprefix.32/27 --name GatewaySubnet -g $rg --vnet-name $branchname-vnet --output none
 az network public-ip create --name branch-ergw-pip --resource-group $rg --location $location -o none --sku Standard
 az network vnet-gateway create --name branch-ergw --resource-group $rg --location $location --public-ip-address branch-ergw-pip --vnet $branchname-vnet --gateway-type "ExpressRoute" --sku "Standard" --allow-remote-vnet-traffic true --no-wait
-
-# Loop script to check ER Gateways provisioning state
-echo Validating ER Gateways provisioning...
-prState=''
-while [[ $prState != 'Succeeded' ]];
-do
-    prState=$(az network vnet-gateway show -n branch-ergw -g $rg --query 'provisioningState' -o tsv)
-    echo "Branch ER Gateway provisioning state provisioningState="$prState
-    sleep 5
-done
 
 # Loop script to check ER Gateways provisioning state
 echo Validating ER Gateways provisioning...
