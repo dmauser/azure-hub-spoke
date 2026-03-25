@@ -5,8 +5,8 @@ az group delete --name $rg --yes --no-wait
 
 # Define your variables
 project=angular-expanse-327722 #Set your project Name. Get your PROJECT_ID use command: gcloud projects list 
-region=us-central1 #Set your region. Get Regions/Zones Use command: gcloud compute zones list
-zone=us-central1-c # Set availability zone: a, b or c.
+region=us-east1 #Set your region. Get Regions/Zones Use command: gcloud compute zones list
+zone=us-east1-b # Set availability zone: a, b or c.
 vpcrange=192.168.100.0/24
 envname=er-migration
 vmname=vm1
