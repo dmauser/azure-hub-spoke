@@ -1,12 +1,14 @@
-# Run both command below to create Hub1+On-Premises and Hub2
+# Deploy Hub1 and Hub2 with ExpressRoute transit between them
 
-#Paramters
+# Parameters
 rg=er-hub-transit-lab
 location=centralus
 
-# Step 1 - Deploy Hub1 and Hub2 base Lab using the following ARM templates
+# Step 1 - Deploy Hub1 and Hub2 base lab using ARM templates
+# Note: it will prompt for VmAdminUsername and VmAdminPassword twice (expected behavior)
 
-az group create --name $rg --location $location
+az group create --name $rg --location $location --output none
+
 az deployment group create --name Hub1-$location --resource-group $rg \
 --template-uri https://raw.githubusercontent.com/dmauser/azure-hub-spoke-base-lab/main/azuredeploy.json \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters1.json \
@@ -17,35 +19,51 @@ az deployment group create --name Hub2-$location --resource-group $rg \
 --parameters https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-hub-transit/parameters2.json \
 --no-wait
 
-# It will prompt you to add usename and password twice (excepcted beahvior)
-# Please provide string value for 'VmAdminUsername'
-# Please provide securestring value for 'VmAdminPassword'
+# Wait for both hub deployments to complete before proceeding
+echo "Waiting for Hub1 deployment to complete..."
+az deployment group wait --name Hub1-$location --resource-group $rg --created
+echo "Hub1 deployment complete."
+
+echo "Waiting for Hub2 deployment to complete..."
+az deployment group wait --name Hub2-$location --resource-group $rg --created
+echo "Hub2 deployment complete."
 
 # Step 2 - Create an ExpressRoute Circuit
-
-# 1) Create ExpressRoute Circuit
-# In this example ExpressRoute is created in Dallas using Mepgaport as Provider. Make the necessary changes based on your needs
-# Define variables
-ername=$(echo $rg) # ExpressRoute Circuit Name
-cxlocation=Dallas #Peering Location
+# In this example ExpressRoute is created in Dallas using Megaport as provider.
+# Adjust cxlocation and provider as needed for your environment.
+ername=$rg # ExpressRoute Circuit Name (reuses resource group name)
+cxlocation=Dallas # Peering Location
 provider=Megaport # Provider
 az network express-route create --bandwidth 50 -n $ername --peering-location $cxlocation -g $rg --provider $provider -l $location --sku-family MeteredData --sku-tier Standard -o none
 
-# Step 3 - Provision ExpressRoute Circuit with you provider
+# Display the service key needed to provision the circuit with your provider
+echo "ExpressRoute Service Key: $(az network express-route show -n $ername -g $rg --query serviceKey -o tsv)"
 
-# Step 4 - Attach ER Circuit to the VNET ERGW on Hub1 and Hub2
-# Add check for Service Provider serviceProviderProvisioningState = Provisioned
-erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
+# Step 3 - Provision the ExpressRoute Circuit with your provider using the service key above.
+# Wait until the provider sets serviceProviderProvisioningState to "Provisioned" before continuing.
+echo "Waiting for ExpressRoute circuit to be provisioned by the provider..."
+while true; do
+    provisioningState=$(az network express-route show -n $ername -g $rg --query serviceProviderProvisioningState -o tsv)
+    echo "  serviceProviderProvisioningState: $provisioningState"
+    [ "$provisioningState" = "Provisioned" ] && break
+    sleep 30
+done
+echo "ExpressRoute circuit provisioned."
+
+# Step 4 - Attach ER Circuit to the ExpressRoute Gateway on Hub1 and Hub2
+erid=$(az network express-route show -n $ername -g $rg --query id -o tsv)
+
 az network vpn-connection create --name ER-Connection-to-Hub1 \
 --resource-group $rg --vnet-gateway1 Az-Hub1-ergw \
 --express-route-circuit2 $erid \
 --routing-weight 0 \
 --output none
 
-erid=$(az network express-route show -n $ername -g $rg --query id -o tsv) 
 az network vpn-connection create --name ER-Connection-to-Hub2 \
 --resource-group $rg --vnet-gateway1 Az-Hub2-ergw \
 --express-route-circuit2 $erid \
 --routing-weight 0 \
 --output none
+
+echo "Lab deployment complete. Both hubs are connected via ExpressRoute transit."
 
