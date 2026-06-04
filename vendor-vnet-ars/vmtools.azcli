@@ -1,15 +1,19 @@
+# Script 5: Install networking tools on all Linux VMs
+# Installs: traceroute, tcptraceroute, iperf, and other network utilities
+# Dependencies: VMs must be deployed from Scripts 1-4
+
 #Parameters
 rg=lab-vendor-ars #Define your resource group
 location=southcentralus #Set location
 
-# VM Net utilities and serial console
-#Enable boot diagnostics for all VMs in the resource group (Serial console)
-echo Enabling boot diagnostics
+########## Enable Boot Diagnostics (Serial Console) ##########
+echo Enabling boot diagnostics for all VMs
 az vm boot-diagnostics enable --ids $(az vm list -g $rg --query '[].{id:id}' -o tsv) -o none
 
-echo Installing tools for networking connectivity validation such as traceroute, tcptraceroute, iperf and others  
+########## Install Networking Tools on Linux VMs ##########
+echo Installing networking tools (traceroute, tcptraceroute, iperf, etc.)
 nettoolsuri="https://raw.githubusercontent.com/dmauser/azure-vm-net-tools/main/script/nettools.sh"
-for vm in `az vm list -g $rg --query "[?storageProfile.imageReference.offer=='UbuntuServer'].name" -o tsv`
+for vm in `az vm list -g $rg --query "[?storageProfile.osDisk.osType=='Linux'].name" -o tsv`
 do
  az vm extension set \
  --resource-group $rg \
