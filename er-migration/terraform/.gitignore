@@ -1,0 +1,25 @@
+# Local .terraform directories and provider binaries
+**/.terraform/*
+.terraform.lock.hcl
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Variable files that may contain secrets (keep the .example committed)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Plan output / overrides
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc

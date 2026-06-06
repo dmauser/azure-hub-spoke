@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and provide real values before planning.
+# Set gcp_onprem.deploy_gcp = false below for Azure-only validation.
+
+admin_password = "<set-me>"
+gcp_project    = "<your-gcp-project>"
+
+gcp_onprem = {
+  deploy_gcp       = true
+  network_name     = "gcp-on-prem-vpc"
+  network_cidr     = "192.168.100.0/24"
+  subnet_cidr      = "192.168.100.0/24"
+  vm_private_ip    = "192.168.100.2"
+  cloud_router_asn = 16550
+}
