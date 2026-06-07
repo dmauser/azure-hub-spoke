@@ -97,6 +97,21 @@ Applied objective static-validation fixes after `terraform validate`:
 
 Validation now passes with `terraform validate`; no backend, plan, or apply was run.
 
+### 2026-06-04T19:30:00Z: ping-monitor.sh conventions for migration-interruption measurement
+
+- **By:** Apoc (Validation & Testing)
+- **Lab:** er-migration
+- **Status:** Proposed
+
+`er-migration/scripts/ping-monitor.sh` is the canonical tool for measuring data-path interruption during the Azure managed ExpressRoute gateway migration. The following conventions govern it:
+
+1. **Source VM / destination VM:** GCP on-prem VM (`192.168.100.2`) pings Azure hub VM (`10.0.0.4`). The script runs on the GCP VM.
+2. **Outage window accounting:** an outage begins at the first missed probe (`[DOWN]`) and closes at the first successful reply (`[UP]`). Duration = probe-count × INTERVAL seconds. This is the authoritative measure of data-path interruption.
+3. **Summary math:** `max_outage` stores the *count* of consecutive missed probes; the display value is always `max_outage × INTERVAL` seconds. Any future edit must preserve this — do **not** print the raw probe count as seconds.
+4. **Incomplete outage at script stop:** `on_exit` must label an open window as `[STILL-DOWN] … NOT recovered`, never as "recovered".
+5. **Line endings:** the file must use Unix LF (`\n`) only. CRLF will break execution on the GCP Debian/Ubuntu VM.
+6. **Portability:** `date +%3N` (milliseconds) requires GNU coreutils. This is available on standard GCP Debian/Ubuntu VMs. Document the Busybox limitation in comments; do not silently remove the millisecond precision.
+
 ## Governance
 
 - All meaningful changes require team consensus
