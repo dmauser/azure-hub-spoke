@@ -112,6 +112,22 @@ Validation now passes with `terraform validate`; no backend, plan, or apply was 
 5. **Line endings:** the file must use Unix LF (`\n`) only. CRLF will break execution on the GCP Debian/Ubuntu VM.
 6. **Portability:** `date +%3N` (milliseconds) requires GNU coreutils. This is available on standard GCP Debian/Ubuntu VMs. Document the Busybox limitation in comments; do not silently remove the millisecond precision.
 
+### 2026-06-06T19:43:25-05:00: ER Connection Fix
+
+- **By:** Switch (Hybrid Connectivity & Routing)
+- **Lab:** er-migration / resource group lab-er-migration / westus3
+- **Status:** Ready to Execute
+
+Circuit `az-hub-er-circuit` is Provisioned (Megaport VXC up), but connection `az-hub-ergw-to-az-hub-er-circuit` is Failed (0 bytes transferred). Root cause: connection was created out-of-band while `serviceProviderProvisioningState` was still `NotProvisioned`; Azure returns `Failed` for premature connections, which do not self-heal. Terraform two-phase config is commit-ready. Remediation: delete Failed connection → add `er_circuit` block with `enabled=true, create_peering=false` to tfvars → terraform apply → validate. Copy-paste runbook written to .squad/decisions/inbox/switch-er-connection-fix.md (now merged).
+
+### 2026-06-06T19:46:00-05:00: Interactive Region Prompts for er-migration Deploy Scripts
+
+- **By:** Tank (Infra / IaC Engineer)
+- **Lab:** er-migration
+- **Status:** Applied
+
+`er-migration/scripts/deploy.ps1` and `er-migration/scripts/deploy.sh` now interactively prompt for both Azure region (default `westus3`) and GCP region (default `us-east1`), with `-AzureRegion`/`--azure-region` and `-GcpRegion`/`--gcp-region` non-interactive overrides. Terraform variables `location` and `gcp_region` are top-level standalone (not nested). deploy.ps1 parses clean; deploy.sh uses LF and passes `bash -n`. Outcome: success.
+
 ## Governance
 
 - All meaningful changes require team consensus
