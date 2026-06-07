@@ -1,5 +1,21 @@
 # ER Migration Terraform Address Plan
 
+> **Update 2026-06-06 (supersedes the layout below).** The lab now deploys a **single** ExpressRoute
+> gateway (`az-hub-ergw`) and uses [Azure managed ExpressRoute gateway migration](https://learn.microsoft.com/azure/expressroute/gateway-migration)
+> for the SKU/AZ migration, instead of two coexisting gateways with routing-weight cutover. The
+> `AzureFirewallSubnet` (reserved, unused) and `RouteServerSubnet` (and the Azure Route Server
+> resource) were removed, and the GatewaySubnet was changed to a single `/26` so the temporary
+> second gateway created during managed migration fits. Current hub layout:
+>
+> | Subnet | CIDR |
+> | --- | --- |
+> | `subnet1` (hub VM `10.0.0.4`) | `10.0.0.0/27` |
+> | `GatewaySubnet` | `10.0.0.64/26` |
+> | `AzureBastionSubnet` | `10.0.0.192/26` |
+>
+> Free for future use: `10.0.0.32/27` and `10.0.0.128/26`. The sections below are retained as the
+> original design record and no longer match the deployed configuration.
+
 Date: 2026-06-04T17:29:07-05:00
 Owner: Trinity / Lead Network Architect
 Scope: Analysis-only address, ASN, and migration-gateway contract for the `er-migration` Terraform rebuild.

@@ -19,8 +19,6 @@ resource "azurerm_subnet" "hub" {
   address_prefixes     = each.value.address_prefixes
 }
 
-# AzureFirewallSubnet is reserved for future Azure Firewall deployment.
-
 resource "azurerm_network_security_group" "subnet1" {
   name                = "${var.hub.name}-subnet1-nsg"
   resource_group_name = var.resource_group_name

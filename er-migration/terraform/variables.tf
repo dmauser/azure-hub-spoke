@@ -76,18 +76,14 @@ variable "hub" {
       address_prefixes = list(string)
       purpose          = optional(string)
     }))
-    gateway_subnet_extra_prefix = string
   })
 
   default = {
-    name                        = "az-hub-vnet"
-    address_space               = ["10.0.0.0/24"]
-    gateway_subnet_extra_prefix = "10.0.0.160/27"
+    name          = "az-hub-vnet"
+    address_space = ["10.0.0.0/24"]
     subnets = [
       { name = "subnet1", address_prefixes = ["10.0.0.0/27"], purpose = "hub-vm" },
-      { name = "GatewaySubnet", address_prefixes = ["10.0.0.32/27", "10.0.0.160/27"], purpose = "expressroute-gateways" },
-      { name = "AzureFirewallSubnet", address_prefixes = ["10.0.0.64/26"], purpose = "azure-firewall" },
-      { name = "RouteServerSubnet", address_prefixes = ["10.0.0.128/27"], purpose = "azure-route-server" },
+      { name = "GatewaySubnet", address_prefixes = ["10.0.0.64/26"], purpose = "expressroute-gateway" },
       { name = "AzureBastionSubnet", address_prefixes = ["10.0.0.192/26"], purpose = "azure-bastion" }
     ]
   }
@@ -138,26 +134,49 @@ variable "gcp_onprem" {
   }
 }
 
-variable "expressroute_migration" {
+variable "er_gateway" {
   type = object({
-    circuit_asn                = number
-    provider_router_asn        = number
-    azure_gateway_asn          = number
-    original_gateway_name      = string
-    migrated_gateway_name      = string
-    original_connection_weight = number
-    migrated_connection_weight = number
-    admin_state_fallback       = bool
+    name           = string
+    asn            = number
+    sku            = string
+    routing_weight = number
   })
 
   default = {
-    circuit_asn                = 12076
-    provider_router_asn        = 65001
-    azure_gateway_asn          = 65515
-    original_gateway_name      = "az-hub-ergw"
-    migrated_gateway_name      = "az-hub-ergw-migrated"
-    original_connection_weight = 0
-    migrated_connection_weight = 100
-    admin_state_fallback       = true
+    name           = "az-hub-ergw"
+    asn            = 65515
+    sku            = "Standard"
+    routing_weight = 0
   }
+}
+
+variable "er_circuit" {
+  description = <<-EOT
+    ExpressRoute circuit settings plus optional Azure private peering / connection control.
+
+    private_peering.enabled        - when true, the gateway-to-circuit connection is created.
+                                     Only enable AFTER the Megaport VXC is provisioned (circuit
+                                     serviceProviderProvisioningState = Provisioned), otherwise the
+                                     connection fails with ServiceProviderNotProvisioned.
+    private_peering.create_peering - when true (default), Terraform creates the AzurePrivatePeering.
+                                     Set false when Megaport (managed provider) auto-creates the
+                                     peering, so Terraform manages only the connection.
+  EOT
+  type = object({
+    name              = optional(string, "az-hub-er-circuit")
+    provider_name     = optional(string, "Megaport")
+    peering_location  = optional(string, "Chicago")
+    bandwidth_in_mbps = optional(number, 50)
+    sku_tier          = optional(string, "Standard")
+    sku_family        = optional(string, "MeteredData")
+    private_peering = optional(object({
+      enabled                       = optional(bool, false)
+      create_peering                = optional(bool, true)
+      peer_asn                      = optional(number, 65001)
+      vlan_id                       = optional(number)
+      primary_peer_address_prefix   = optional(string)
+      secondary_peer_address_prefix = optional(string)
+    }), {})
+  })
+  default = {}
 }

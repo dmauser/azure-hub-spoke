@@ -18,11 +18,6 @@ output "gateway_subnet_id" {
   value       = azurerm_subnet.hub["GatewaySubnet"].id
 }
 
-output "route_server_subnet_id" {
-  description = "ID of RouteServerSubnet."
-  value       = azurerm_subnet.hub["RouteServerSubnet"].id
-}
-
 output "subnet_ids" {
   description = "Map of hub subnet names to subnet IDs."
   value       = { for name, subnet in azurerm_subnet.hub : name => subnet.id }

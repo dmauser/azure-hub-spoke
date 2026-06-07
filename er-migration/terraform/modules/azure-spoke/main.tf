@@ -105,6 +105,12 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   use_remote_gateways       = true
 
   depends_on = [azurerm_virtual_network_peering.hub_to_spoke]
+
+  # use_remote_gateways requires the hub ExpressRoute gateway to exist. Gateway provisioning
+  # can take ~30-45 minutes, so allow the peering to keep polling past the 30-minute default.
+  timeouts {
+    create = "60m"
+  }
 }
 
 resource "azurerm_virtual_network_peering" "hub_to_spoke" {

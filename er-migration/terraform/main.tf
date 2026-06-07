@@ -37,16 +37,6 @@ module "spokes" {
   hub_resource_group_name = azurerm_resource_group.main.name
 }
 
-module "routeserver" {
-  source = "./modules/azure-routeserver"
-
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  tags                = local.common_tags
-
-  route_server_subnet_id = module.hub.route_server_subnet_id
-}
-
 module "ergw" {
   source = "./modules/azure-ergw"
 
@@ -54,8 +44,9 @@ module "ergw" {
   location            = azurerm_resource_group.main.location
   tags                = local.common_tags
 
-  gateway_subnet_id      = module.hub.gateway_subnet_id
-  expressroute_migration = var.expressroute_migration
+  gateway_subnet_id = module.hub.gateway_subnet_id
+  er_gateway        = var.er_gateway
+  er_circuit        = var.er_circuit
 }
 
 module "gcp_onprem" {

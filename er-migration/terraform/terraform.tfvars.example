@@ -12,3 +12,23 @@ gcp_onprem = {
   vm_private_ip    = "192.168.100.2"
   cloud_router_asn = 16550
 }
+
+# ExpressRoute circuit + connection control.
+# Leave private_peering.enabled = false for the FIRST apply (circuit/gateway/GCP only).
+# After Megaport provisions the VXC (circuit serviceProviderProvisioningState = Provisioned),
+# set enabled = true and re-apply to create the gateway-to-circuit connection.
+#   create_peering = false  -> Megaport auto-creates the AzurePrivatePeering (managed provider);
+#                              Terraform manages only the connection (no vlan/prefixes needed).
+#   create_peering = true   -> Terraform creates the peering; then vlan_id + both /30 peer
+#                              prefixes below are REQUIRED.
+er_circuit = {
+  name = "az-hub-er-circuit"
+  private_peering = {
+    enabled        = false
+    create_peering = false
+    peer_asn       = 65001
+    # vlan_id                       = 100
+    # primary_peer_address_prefix   = "169.254.43.144/30"
+    # secondary_peer_address_prefix = "169.254.43.148/30"
+  }
+}

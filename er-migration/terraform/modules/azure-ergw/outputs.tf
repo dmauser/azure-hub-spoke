@@ -9,12 +9,7 @@ output "circuit_service_key" {
   sensitive   = true
 }
 
-output "original_gateway_id" {
-  description = "Resource ID of the original ExpressRoute virtual network gateway."
-  value       = azurerm_virtual_network_gateway.gateway["original"].id
-}
-
-output "migrated_gateway_id" {
-  description = "Resource ID of the migrated ExpressRoute virtual network gateway."
-  value       = azurerm_virtual_network_gateway.gateway["migrated"].id
+output "gateway_id" {
+  description = "Resource ID of the ExpressRoute virtual network gateway."
+  value       = azurerm_virtual_network_gateway.gateway.id
 }

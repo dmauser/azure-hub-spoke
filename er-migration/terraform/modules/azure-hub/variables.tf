@@ -23,7 +23,6 @@ variable "hub" {
       address_prefixes = list(string)
       purpose          = optional(string)
     }))
-    gateway_subnet_extra_prefix = string
   })
   description = "Hub VNet and subnet address plan."
 
@@ -33,31 +32,13 @@ variable "hub" {
   }
 
   validation {
-    condition     = contains([for subnet in var.hub.subnets : subnet.name], "RouteServerSubnet")
-    error_message = "hub.subnets must include a subnet named exactly RouteServerSubnet."
-  }
-
-  validation {
     condition     = contains([for subnet in var.hub.subnets : subnet.name], "AzureBastionSubnet")
     error_message = "hub.subnets must include a subnet named exactly AzureBastionSubnet."
   }
 
   validation {
-    condition     = contains([for subnet in var.hub.subnets : subnet.name], "AzureFirewallSubnet")
-    error_message = "hub.subnets must include a subnet named exactly AzureFirewallSubnet."
-  }
-
-  validation {
     condition     = contains([for subnet in var.hub.subnets : subnet.name], "subnet1")
     error_message = "hub.subnets must include a subnet named exactly subnet1."
-  }
-
-  validation {
-    condition = contains(
-      flatten([for subnet in var.hub.subnets : subnet.name == "GatewaySubnet" ? subnet.address_prefixes : []]),
-      var.hub.gateway_subnet_extra_prefix
-    )
-    error_message = "GatewaySubnet address_prefixes must include hub.gateway_subnet_extra_prefix."
   }
 }
 

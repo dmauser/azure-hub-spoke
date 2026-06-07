@@ -1,10 +1,10 @@
 variable "resource_group_name" {
-  description = "Name of the resource group that will contain the ExpressRoute circuit, gateways, public IPs, and connections."
+  description = "Name of the resource group that will contain the ExpressRoute circuit, gateway, public IP, and connection."
   type        = string
 }
 
 variable "location" {
-  description = "Azure region for the ExpressRoute circuit and virtual network gateways."
+  description = "Azure region for the ExpressRoute circuit and virtual network gateway."
   type        = string
 }
 
@@ -15,34 +15,27 @@ variable "tags" {
 }
 
 variable "gateway_subnet_id" {
-  description = "Resource ID of the hub GatewaySubnet used by both modeled ExpressRoute gateways."
+  description = "Resource ID of the hub GatewaySubnet used by the ExpressRoute gateway."
   type        = string
 }
 
-variable "expressroute_migration" {
-  description = "ExpressRoute migration ASN and routing-weight cutover settings."
+variable "er_gateway" {
+  description = "ExpressRoute virtual network gateway settings. A single gateway is created; SKU/AZ migration is performed with Azure managed gateway migration."
   type = object({
-    circuit_asn                = number
-    provider_router_asn        = number
-    azure_gateway_asn          = number
-    original_gateway_name      = string
-    migrated_gateway_name      = string
-    original_connection_weight = number
-    migrated_connection_weight = number
-    admin_state_fallback       = bool
+    name           = string
+    asn            = number
+    sku            = string
+    routing_weight = number
   })
 
   validation {
-    condition     = var.expressroute_migration.azure_gateway_asn == 65515
+    condition     = var.er_gateway.asn == 65515
     error_message = "Azure ExpressRoute virtual network gateways in this lab must use Azure ASN 65515."
   }
 
   validation {
-    condition = alltrue([
-      var.expressroute_migration.original_connection_weight >= 0,
-      var.expressroute_migration.migrated_connection_weight >= 0
-    ])
-    error_message = "ExpressRoute connection routing weights must be non-negative."
+    condition     = var.er_gateway.routing_weight >= 0
+    error_message = "ExpressRoute connection routing weight must be non-negative."
   }
 }
 
@@ -56,7 +49,13 @@ variable "er_circuit" {
     sku_tier          = optional(string, "Standard")
     sku_family        = optional(string, "MeteredData")
     private_peering = optional(object({
+      # enabled        : master switch. When true, the gateway-to-circuit connection is created.
+      # create_peering : whether Terraform creates the AzurePrivatePeering on the circuit.
+      #   Set false when a managed/Layer-2 provider (e.g. Megaport) auto-creates the peering,
+      #   so Terraform only manages the connection and does not collide with the provider peering.
       enabled                       = optional(bool, false)
+      create_peering                = optional(bool, true)
+      peer_asn                      = optional(number, 65001)
       vlan_id                       = optional(number)
       primary_peer_address_prefix   = optional(string)
       secondary_peer_address_prefix = optional(string)
@@ -75,12 +74,13 @@ variable "er_circuit" {
   }
 
   validation {
-    condition = !var.er_circuit.private_peering.enabled || alltrue([
+    # Peer prefixes/VLAN are only required when Terraform itself creates the peering.
+    # With a managed provider peering (create_peering = false) the connection needs none of these.
+    condition = !(var.er_circuit.private_peering.enabled && var.er_circuit.private_peering.create_peering) || alltrue([
       var.er_circuit.private_peering.vlan_id != null,
       var.er_circuit.private_peering.primary_peer_address_prefix != null,
       var.er_circuit.private_peering.secondary_peer_address_prefix != null
     ])
-    error_message = "When er_circuit.private_peering.enabled is true, vlan_id and both /30 peer address prefixes are required."
+    error_message = "When er_circuit.private_peering.enabled and create_peering are both true, vlan_id and both /30 peer address prefixes are required."
   }
 }
-
