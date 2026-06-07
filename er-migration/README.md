@@ -146,6 +146,8 @@ er-migration/
 ├── scripts/
 │   ├── deploy.ps1                   # full end-to-end deploy (Windows / PowerShell)
 │   ├── deploy.sh                    # full end-to-end deploy (Linux / Bash)
+│   ├── cleanup.ps1                  # full lab teardown (Windows / PowerShell)
+│   ├── cleanup.sh                   # full lab teardown (Linux / Bash)
 │   ├── deploy-gcp.ps1               # GCP-side-only helper (Windows / PowerShell)
 │   ├── ping-monitor.sh              # GCP-side ping monitor for migration interruption (Bash)
 │   ├── validate-lab.ps1            # read-only health check (Windows / PowerShell)
@@ -539,12 +541,38 @@ The Terraform path above remains the fastest way to stand up or tear down the la
 
 - Do not commit plaintext passwords or local `terraform.tfvars` files. `admin_password` is a required sensitive variable and must be supplied through a secure local mechanism such as `terraform.tfvars`, `TF_VAR_admin_password`, or an interactive prompt.
 - The lab VMs use `admin_username` / `admin_password` with password authentication enabled.
-- This lab creates real Azure, GCP, and Megaport charges. When finished, destroy Terraform-managed resources and **manually delete the Megaport VXCs** (Terraform cannot destroy portal-created VXCs):
+- This lab creates real Azure, GCP, and Megaport charges. When finished, use the cleanup scripts to destroy all Terraform-managed resources, then **manually delete the Megaport VXCs** in the [Megaport portal](https://portal.megaport.com) — Terraform cannot destroy portal-created VXCs:
+
+  **Windows (PowerShell):**
+
+  ```powershell
+  cd er-migration\scripts
+  ./cleanup.ps1 -GcpProject <your-gcp-project>
+  # Azure-only:
+  ./cleanup.ps1 -SkipGcp
+  # Non-interactive (CI/automation):
+  ./cleanup.ps1 -GcpProject <your-gcp-project> -Force
+  ```
+
+  **Linux (Bash):**
+
+  ```bash
+  cd er-migration/scripts
+  ./cleanup.sh --gcp-project <your-gcp-project>
+  # Azure-only:
+  ./cleanup.sh --skip-gcp
+  # Non-interactive (CI/automation):
+  ./cleanup.sh --gcp-project <your-gcp-project> --force
+  ```
+
+  Alternatively, run `terraform destroy` directly from `er-migration/terraform`:
 
   ```powershell
   cd er-migration\terraform
   terraform destroy -var "admin_password=<strong-pwd>"
   ```
+
+  > **Note:** The cleanup scripts handle an important edge case: the ER gateway connection `az-hub-ergw-to-az-hub-er-circuit` may have been created or recreated directly via `az` during incident remediation and therefore may **not** exist in Terraform state. The scripts delete it explicitly via `az` before running `terraform destroy` so it is not orphaned. They also remind you to delete the Megaport VXCs — see [`terraform/docs/megaport-cross-connect.md`](./terraform/docs/megaport-cross-connect.md) for VXC deletion steps.
 
 ---
 

@@ -128,6 +128,61 @@ wait_for_state() {
 probe_circuit_state() { az network express-route show -g "$RG" -n "$CIRCUIT" --query serviceProviderProvisioningState -o tsv; }
 probe_conn_state()    { az network vpn-connection show -g "$RG" -n "$CONN_NAME" --query provisioningState -o tsv; }
 
+# Detects an ER gateway connection in Failed state, guards on the circuit being
+# Provisioned, deletes the connection, re-applies Terraform (enabled=true already in
+# tfvars), re-polls to Succeeded, and verifies the ERGW learned the GCP on-prem prefix.
+# Must be called from within $TERRAFORM_DIR with enabled=true already in terraform.tfvars.
+repair_failed_er_connection() {
+  local max_attempts="${1:-2}"
+  local attempt conn_state er_state learned repair_ok
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    conn_state="$(az network vpn-connection show -g "$RG" -n "$CONN_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
+    if [[ "$conn_state" != "Failed" ]]; then
+      [[ -n "$conn_state" ]] && ok "Connection '$CONN_NAME' state = $conn_state — no repair needed."
+      return 0
+    fi
+    warn "[Repair $attempt/$max_attempts] Connection '$CONN_NAME' is Failed."
+    # Guard: circuit must be Provisioned; recreating against an unprovisioned circuit would fail again.
+    er_state="$(az network express-route show -g "$RG" -n "$CIRCUIT" --query serviceProviderProvisioningState -o tsv 2>/dev/null || true)"
+    if [[ "$er_state" != "Provisioned" ]]; then
+      warn "Circuit '$CIRCUIT' serviceProviderProvisioningState = '$er_state' (need 'Provisioned')."
+      warn "Cannot recreate connection now — recreating would fail again. Wait for Megaport to provision the circuit."
+      return 1
+    fi
+    step "Deleting Failed connection '$CONN_NAME' (repair attempt $attempt/$max_attempts)..."
+    az network vpn-connection delete -g "$RG" -n "$CONN_NAME" --yes >/dev/null 2>&1 || true
+    ok "Failed connection deleted."
+    step "Re-applying Terraform to recreate the connection..."
+    if ! terraform plan -input=false -out="selfheal-${attempt}.tfplan"; then
+      warn "terraform plan failed on repair attempt $attempt."; continue
+    fi
+    if ! terraform apply -input=false "selfheal-${attempt}.tfplan"; then
+      warn "terraform apply failed on repair attempt $attempt."; continue
+    fi
+    repair_ok="no"
+    if wait_for_state "Succeeded" "connection provisioningState (self-heal)" 30 20 probe_conn_state; then
+      repair_ok="yes"
+    fi
+    if [[ "$repair_ok" == "yes" ]]; then
+      ok "Connection '$CONN_NAME' self-healed to Succeeded."
+      learned="$(az network vnet-gateway list-learned-routes -g "$RG" -n "$GATEWAY" --query "value[].address" -o tsv 2>/dev/null || true)"
+      if grep -q "$GCP_ONPREM_CIDR" <<<"$learned"; then
+        ok "ERGW '$GATEWAY' has learned $GCP_ONPREM_CIDR — ER data path confirmed."
+      else
+        warn "ERGW '$GATEWAY' has not yet learned $GCP_ONPREM_CIDR (BGP may still be converging)."
+        warn "  az network vnet-gateway list-learned-routes -g $RG -n $GATEWAY"
+      fi
+      return 0
+    fi
+    warn "Connection did not reach 'Succeeded' after repair attempt $attempt."
+  done
+  err "Exhausted $max_attempts self-heal attempt(s) for '$CONN_NAME'. Manual remediation:"
+  err "  1. az network vpn-connection delete -g $RG -n $CONN_NAME --yes"
+  err "  2. terraform apply   (from $TERRAFORM_DIR)"
+  err "  3. Verify: az network vnet-gateway list-learned-routes -g $RG -n $GATEWAY"
+  return 1
+}
+
 # ----------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="$(cd "${SCRIPT_DIR}/../terraform" && pwd)"
@@ -314,16 +369,19 @@ else
   ok "AzurePrivatePeering = Succeeded"
 fi
 
-# --- Phase 5: self-heal a Failed connection ---
+# --- Phase 5: remove any pre-existing Failed orphan connection ---
+# Guard on circuit Provisioned before deleting; the full post-apply retry loop is in
+# repair_failed_er_connection (invoked after Phase 7 if the connection is still Failed).
 CONN_STATE="$(az network vpn-connection show -g "$RG" -n "$CONN_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
 if [[ "$CONN_STATE" == "Failed" ]]; then
-  warn "Existing connection '$CONN_NAME' is in a Failed state (created before the circuit was provisioned)."
-  read -r -p "Delete the Failed connection so it can be recreated cleanly? (Y/n) " del
-  if [[ ! "$del" =~ ^([nN]|no)$ ]]; then
-    az network vpn-connection delete -g "$RG" -n "$CONN_NAME" >/dev/null 2>&1 || true
-    ok "Removed the Failed connection."
+  warn "Existing connection '$CONN_NAME' is Failed (likely created before the circuit was Provisioned)."
+  CIRCUIT_NOW="$(az network express-route show -g "$RG" -n "$CIRCUIT" --query serviceProviderProvisioningState -o tsv 2>/dev/null || true)"
+  if [[ "$CIRCUIT_NOW" != "Provisioned" ]]; then
+    warn "Circuit serviceProviderProvisioningState = '${CIRCUIT_NOW:-unknown}'. Cannot safely delete yet; repair_failed_er_connection will retry after apply."
   else
-    warn "Leaving the Failed connection in place may block a clean apply."
+    step "Circuit is Provisioned. Auto-deleting Failed orphan connection so Terraform can create it cleanly..."
+    az network vpn-connection delete -g "$RG" -n "$CONN_NAME" --yes >/dev/null 2>&1 || true
+    ok "Failed orphan connection removed."
   fi
 elif [[ -n "$CONN_STATE" ]]; then
   ok "Existing connection '$CONN_NAME' state = $CONN_STATE"
@@ -339,12 +397,31 @@ ok "Connection apply complete."
 # --- Phase 7: poll the connection to Succeeded ---
 step "Waiting for the ExpressRoute connection to succeed"
 if ! wait_for_state "Succeeded" "connection provisioningState" 30 20 probe_conn_state; then
-  warn "Connection did not reach 'Succeeded'. Check the portal and BGP status."
+  warn "Connection did not reach 'Succeeded' after apply. Attempting automated self-heal..."
+  CONN_STATE7="$(az network vpn-connection show -g "$RG" -n "$CONN_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
+  if [[ "$CONN_STATE7" == "Failed" ]]; then
+    if ! repair_failed_er_connection 2; then
+      err "ER connection self-heal failed. See actionable guidance above."
+      exit 1
+    fi
+  else
+    warn "Connection state = '${CONN_STATE7:-unknown}'. Check the portal and BGP status."
+  fi
 fi
 
 # --- Phase 8: validate route exchange ---
 step "Validating route exchange across ExpressRoute"
 OK_PATH="yes"
+# ERGW learned-route check (Azure-side — verifies ER data path regardless of GCP mode)
+step "Checking ERGW learned routes for GCP on-prem prefix"
+GW_ROUTES="$(az network vnet-gateway list-learned-routes -g "$RG" -n "$GATEWAY" --query "value[].address" -o tsv 2>/dev/null || true)"
+if grep -q "$GCP_ONPREM_CIDR" <<<"$GW_ROUTES"; then
+  ok "ERGW '$GATEWAY' has learned $GCP_ONPREM_CIDR — ER data path confirmed."
+else
+  warn "ERGW '$GATEWAY' has not yet learned $GCP_ONPREM_CIDR. BGP may still be converging."
+  warn "  az network vnet-gateway list-learned-routes -g $RG -n $GATEWAY"
+  OK_PATH="no"
+fi
 if [[ "$USE_GCP" == "yes" ]]; then
   ROUTER="$(gcloud compute routers list --project "$GCP_PROJECT" --filter="region:( $GCP_REGION )" --format='value(name)' 2>/dev/null | head -n1 || true)"
   if [[ -n "$ROUTER" ]]; then

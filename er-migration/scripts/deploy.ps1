@@ -147,6 +147,58 @@ function Wait-ForState {
     }
 }
 
+# Detects an ER gateway connection in Failed state, guards on the circuit being
+# Provisioned, deletes the connection, re-applies Terraform (which owns it because
+# enabled=true is already written to tfvars), re-polls to Succeeded, and verifies the
+# ERGW has learned the GCP on-prem prefix.  Must be called from within $TerraformDir.
+function Repair-FailedErConnection {
+    param([int]$MaxAttempts = 2)
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $cState = (az network vpn-connection show -g $Rg -n $ConnName --query provisioningState -o tsv 2>$null)
+        if ($cState -ne "Failed") {
+            if ($cState) { Write-Ok "Connection '$ConnName' state = $cState — no repair needed." }
+            return $true
+        }
+        Write-Warn2 "[Repair $attempt/$MaxAttempts] Connection '$ConnName' is Failed."
+        # Guard: circuit must be Provisioned; recreating against an unprovisioned circuit would fail again.
+        $erState = (az network express-route show -g $Rg -n $Circuit --query serviceProviderProvisioningState -o tsv 2>$null)
+        if ($erState -ne "Provisioned") {
+            Write-Warn2 "Circuit '$Circuit' serviceProviderProvisioningState = '$erState' (need 'Provisioned')."
+            Write-Warn2 "Cannot recreate connection now — recreating would fail again. Wait for Megaport to provision the circuit."
+            return $false
+        }
+        Write-Step "Deleting Failed connection '$ConnName' (repair attempt $attempt/$MaxAttempts)..."
+        az network vpn-connection delete -g $Rg -n $ConnName --yes 2>$null | Out-Null
+        Write-Ok "Failed connection deleted."
+        Write-Step "Re-applying Terraform to recreate the connection..."
+        terraform plan -input=false "-out=selfheal-$attempt.tfplan"
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "terraform plan failed on repair attempt $attempt."; continue }
+        terraform apply -input=false "selfheal-$attempt.tfplan"
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "terraform apply failed on repair attempt $attempt."; continue }
+        $repairOk = Wait-ForState `
+            -Probe { az network vpn-connection show -g $Rg -n $ConnName --query provisioningState -o tsv 2>$null } `
+            -Wanted "Succeeded" -Label "connection provisioningState (self-heal)" `
+            -IntervalSeconds 30 -TimeoutMinutes 20
+        if ($repairOk) {
+            Write-Ok "Connection '$ConnName' self-healed to Succeeded."
+            $learned = (az network vnet-gateway list-learned-routes -g $Rg -n $Gateway --query "value[].address" -o tsv 2>$null)
+            if ($learned -match [regex]::Escape($GcpOnpremCidr)) {
+                Write-Ok "ERGW '$Gateway' has learned $GcpOnpremCidr — ER data path confirmed."
+            } else {
+                Write-Warn2 "ERGW '$Gateway' has not yet learned $GcpOnpremCidr (BGP may still be converging)."
+                Write-Warn2 "  az network vnet-gateway list-learned-routes -g $Rg -n $Gateway"
+            }
+            return $true
+        }
+        Write-Warn2 "Connection did not reach 'Succeeded' after repair attempt $attempt."
+    }
+    Write-Err2 "Exhausted $MaxAttempts self-heal attempt(s) for '$ConnName'. Manual remediation:"
+    Write-Err2 "  1. az network vpn-connection delete -g $Rg -n $ConnName --yes"
+    Write-Err2 "  2. terraform apply   (from $TerraformDir)"
+    Write-Err2 "  3. Verify: az network vnet-gateway list-learned-routes -g $Rg -n $Gateway"
+    return $false
+}
+
 # ----------------------------------------------------------------------------
 $ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TerraformDir = Resolve-Path (Join-Path $ScriptDir "..\terraform")
@@ -349,16 +401,19 @@ try {
         Write-Ok "AzurePrivatePeering = Succeeded"
     }
 
-    # --- Phase 5: self-heal a Failed connection ---
+    # --- Phase 5: remove any pre-existing Failed orphan connection ---
+    # Guard on circuit Provisioned before deleting; the full post-apply retry loop is in
+    # Repair-FailedErConnection (invoked after Phase 7 if the connection is still Failed).
     $connState = (az network vpn-connection show -g $Rg -n $ConnName --query provisioningState -o tsv 2>$null)
     if ($connState -eq "Failed") {
-        Write-Warn2 "Existing connection '$ConnName' is in a Failed state (created before the circuit was provisioned)."
-        $del = Read-Host "Delete the Failed connection so it can be recreated cleanly? (Y/n)"
-        if ($del -notmatch '^(n|no)$') {
-            az network vpn-connection delete -g $Rg -n $ConnName 2>$null | Out-Null
-            Write-Ok "Removed the Failed connection."
+        Write-Warn2 "Existing connection '$ConnName' is Failed (likely created before the circuit was Provisioned)."
+        $circuitNow = (az network express-route show -g $Rg -n $Circuit --query serviceProviderProvisioningState -o tsv 2>$null)
+        if ($circuitNow -ne "Provisioned") {
+            Write-Warn2 "Circuit serviceProviderProvisioningState = '$circuitNow'. Cannot safely delete yet; Repair-FailedErConnection will retry after apply."
         } else {
-            Write-Warn2 "Leaving the Failed connection in place may block a clean apply."
+            Write-Step "Circuit is Provisioned. Auto-deleting Failed orphan connection so Terraform can create it cleanly..."
+            az network vpn-connection delete -g $Rg -n $ConnName --yes 2>$null | Out-Null
+            Write-Ok "Failed orphan connection removed."
         }
     } elseif ($connState) {
         Write-Ok "Existing connection '$ConnName' state = $connState"
@@ -380,11 +435,30 @@ try {
         -Probe { az network vpn-connection show -g $Rg -n $ConnName --query provisioningState -o tsv 2>$null } `
         -Wanted "Succeeded" -Label "connection provisioningState" `
         -IntervalSeconds 30 -TimeoutMinutes 20
-    if (-not $connOk) { Write-Warn2 "Connection did not reach 'Succeeded'. Check the portal and BGP status." }
+    if (-not $connOk) {
+        Write-Warn2 "Connection did not reach 'Succeeded' after apply. Attempting automated self-heal..."
+        $connState7 = (az network vpn-connection show -g $Rg -n $ConnName --query provisioningState -o tsv 2>$null)
+        if ($connState7 -eq "Failed") {
+            $healed = Repair-FailedErConnection -MaxAttempts 2
+            if (-not $healed) { throw "ER connection self-heal failed. See actionable guidance above." }
+        } else {
+            Write-Warn2 "Connection state = '$(if ($connState7) { $connState7 } else { 'unknown' })'. Check the portal and BGP status."
+        }
+    }
 
     # --- Phase 8: validate route exchange ---
     Write-Step "Validating route exchange across ExpressRoute"
     $ok = $true
+    # ERGW learned-route check (Azure-side — verifies ER data path regardless of GCP mode)
+    Write-Step "Checking ERGW learned routes for GCP on-prem prefix"
+    $gwRoutes = (az network vnet-gateway list-learned-routes -g $Rg -n $Gateway --query "value[].address" -o tsv 2>$null)
+    if ($gwRoutes -match [regex]::Escape($GcpOnpremCidr)) {
+        Write-Ok "ERGW '$Gateway' has learned $GcpOnpremCidr — ER data path confirmed."
+    } else {
+        Write-Warn2 "ERGW '$Gateway' has not yet learned $GcpOnpremCidr. BGP may still be converging."
+        Write-Warn2 "  az network vnet-gateway list-learned-routes -g $Rg -n $Gateway"
+        $ok = $false
+    }
     if ($useGcp) {
         $router = (gcloud compute routers list --project $GcpProject --filter="region:( $GcpRegion )" --format="value(name)" 2>$null | Select-Object -First 1)
         if ($router) {
