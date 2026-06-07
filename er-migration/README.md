@@ -52,6 +52,8 @@ By completing this lab you will:
 
 ![er-migration topology](./diagrams/er-migration.svg)
 
+*📐 Edit this diagram: [open in Excalidraw](https://excalidraw.com/#url=https://raw.githubusercontent.com/dmauser/azure-hub-spoke/main/er-migration/diagrams/diagram.excalidraw) (loads the live `diagram.excalidraw` from `main`) — or download [`diagrams/diagram.excalidraw`](./diagrams/diagram.excalidraw) and open it at [excalidraw.com](https://excalidraw.com).*
+
 ### Topology at a glance
 
 The lab is built from four logical building blocks, each implemented as a Terraform module:
