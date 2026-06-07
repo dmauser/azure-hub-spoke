@@ -128,6 +128,66 @@ Circuit `az-hub-er-circuit` is Provisioned (Megaport VXC up), but connection `az
 
 `er-migration/scripts/deploy.ps1` and `er-migration/scripts/deploy.sh` now interactively prompt for both Azure region (default `westus3`) and GCP region (default `us-east1`), with `-AzureRegion`/`--azure-region` and `-GcpRegion`/`--gcp-region` non-interactive overrides. Terraform variables `location` and `gcp_region` are top-level standalone (not nested). deploy.ps1 parses clean; deploy.sh uses LF and passes `bash -n`. Outcome: success.
 
+### 2026-06-06T20:00:00-05:00: ER Connection Live Fix Executed
+
+- **By:** Coordinator (Ops Lead) + Switch (Hybrid Connectivity & Routing)
+- **Lab:** er-migration / resource group lab-er-migration / westus3
+- **Status:** Verified Healthy
+
+Connection `az-hub-ergw-to-az-hub-er-circuit` was stuck in Failed state (orphan, out-of-band, created before circuit Provisioned). **Live remediation executed per Switch runbook:** deleted Failed orphan → added `er_circuit` block with `enabled=true, create_peering=false` to tfvars → terraform apply → verified Succeeded.
+
+**Live outcome verified:**
+- Connection provisioningState: **Succeeded**
+- Connection status: **Connected**
+- ERGW learned routes: `192.168.100.0/24` (GCP on-prem prefix) ✅
+- GCP Cloud Router BGP: **UP**, learned `10.0.0.0/24` (Azure hub) + spoke routes ✅
+- Data-path health: **HEALTHY** (ping test successful GCP→Azure hub→spokes)
+
+Commit: `6c507ff` on main. No further action required; connection is now tracked by Terraform and will persist through future applies.
+
+### 2026-06-06T20:18:00-05:00: ER Connection Auto-Remediation — Self-Heal Functions Added to Deploy Scripts
+
+- **By:** Tank (Infra / IaC Engineer)
+- **Lab:** er-migration
+- **Status:** Applied
+
+Both `deploy.ps1` and `deploy.sh` now include `Repair-FailedErConnection` / `repair_failed_er_connection` self-heal functions that automatically detect, remediate, and verify a Failed ER connection (encoding the proven live fix from this session).
+
+**Invocation:** After Phase 7 poll (post-apply), if connection is Failed, auto-repair is attempted (up to 2 retries).
+
+**Proven fix sequence:**
+1. Guard: circuit `serviceProviderProvisioningState` must be Provisioned (abort if not).
+2. Delete the Failed connection.
+3. Re-apply Terraform (TF recreates it cleanly).
+4. Poll for Succeeded state (30 s interval, 20 min timeout).
+5. Verify learned routes (`az network vnet-gateway list-learned-routes`).
+
+**Phase 5 + Phase 8 enhancements:** Pre-apply orphan detection strengthened with circuit guard; Phase 8 now includes ERGW learned-route verification independent of GCP mode.
+
+Quality gates: `deploy.ps1` parser clean (0 errors); `deploy.sh` bash -n exit 0, 0 CR bytes.
+
+### 2026-06-06T20:25:00-05:00: Cleanup Scripts Created for er-migration Lab
+
+- **By:** Tank (Infra / IaC Engineer)
+- **Lab:** er-migration
+- **Status:** Applied
+
+Two new teardown scripts mirror the existing deploy pair in style, logging, and phase banners:
+
+- `er-migration/scripts/cleanup.ps1` — Windows / PowerShell
+- `er-migration/scripts/cleanup.sh` — Linux / Bash
+
+**Key parameters:** `-AzureRegion` / `--azure-region` (default westus3), `-GcpProject` / `--gcp-project`, `-GcpRegion` / `--gcp-region` (default us-east1), `-SkipGcp` / `--skip-gcp`, `-Force` / `--force`.
+
+**Order of operations:**
+1. Confirmation + prereqs (az, terraform, gcloud commands; collect admin_password).
+2. Pre-destroy: delete orphan ER connection if present (defensive; tolerate not-found).
+3. Terraform destroy from `er-migration/terraform` (auto-approve, passes vars).
+4. Post-destroy verification (resource group gone; list leftovers if present).
+5. Megaport VXC manual-deletion reminder banner.
+
+Quality gates: `cleanup.ps1` parser clean; `cleanup.sh` bash -n exit 0, 0 CR bytes. README updated with cleanup script usage block (Windows + Linux) and Megaport caveat.
+
 ## Governance
 
 - All meaningful changes require team consensus
