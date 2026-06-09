@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Scenario1-UDR-Only" id="_7mu0K1kzFnNQefQ5kPF">
-        <mxGraphModel dx="2459" dy="1056" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2625" dy="1067" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="pV_txBsgiGjlM6UxXxGn-0"/>
                 <mxCell id="pV_txBsgiGjlM6UxXxGn-1" parent="pV_txBsgiGjlM6UxXxGn-0"/>
@@ -274,7 +274,7 @@
         </mxGraphModel>
     </diagram>
     <diagram name="Scenario2-ARS+UDR" id="1XaMyLIY9vrXjOdyrQUQ">
-        <mxGraphModel dx="2459" dy="1056" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2625" dy="1067" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="GG4BnJNfrM99DxpE0gCM-0"/>
                 <mxCell id="GG4BnJNfrM99DxpE0gCM-1" parent="GG4BnJNfrM99DxpE0gCM-0"/>
@@ -484,13 +484,13 @@
                         <mxPoint x="-649" y="507.0000000000002" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="3hDFKQj4ePBWV0q_CRqL-0" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#6600CC;" edge="1" parent="GG4BnJNfrM99DxpE0gCM-47">
+                <mxCell id="3hDFKQj4ePBWV0q_CRqL-0" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#6600CC;" parent="GG4BnJNfrM99DxpE0gCM-47" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="-715" y="454" as="sourcePoint"/>
                         <mxPoint x="-687" y="401" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="3hDFKQj4ePBWV0q_CRqL-1" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#6600CC;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="GG4BnJNfrM99DxpE0gCM-47" source="GG4BnJNfrM99DxpE0gCM-30" target="GG4BnJNfrM99DxpE0gCM-49">
+                <mxCell id="3hDFKQj4ePBWV0q_CRqL-1" value="" style="endArrow=classic;startArrow=classic;html=1;rounded=0;dashed=1;strokeWidth=2;strokeColor=#6600CC;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="GG4BnJNfrM99DxpE0gCM-47" source="GG4BnJNfrM99DxpE0gCM-30" target="GG4BnJNfrM99DxpE0gCM-49" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">
                         <mxPoint x="-705" y="464" as="sourcePoint"/>
                         <mxPoint x="-682" y="401" as="targetPoint"/>
@@ -505,7 +505,7 @@
                 <mxCell id="_RIgeU-PPk6xCzmOPI8t-0" value="" style="edgeStyle=none;html=1;dashed=1;strokeColor=#000000;strokeWidth=1;fontSize=7;fontColor=#7F00FF;endArrow=none;endFill=0;" parent="GG4BnJNfrM99DxpE0gCM-54" source="GG4BnJNfrM99DxpE0gCM-56" target="GG4BnJNfrM99DxpE0gCM-23" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="3hDFKQj4ePBWV0q_CRqL-2" value="" style="edgeStyle=none;html=1;strokeColor=#6600CC;" edge="1" parent="GG4BnJNfrM99DxpE0gCM-54" source="GG4BnJNfrM99DxpE0gCM-56" target="GG4BnJNfrM99DxpE0gCM-23">
+                <mxCell id="3hDFKQj4ePBWV0q_CRqL-2" value="" style="edgeStyle=none;html=1;strokeColor=#6600CC;" parent="GG4BnJNfrM99DxpE0gCM-54" source="GG4BnJNfrM99DxpE0gCM-56" target="GG4BnJNfrM99DxpE0gCM-23" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="GG4BnJNfrM99DxpE0gCM-56" value="RT-SDWAN&lt;br&gt;&lt;div style=&quot;&quot;&gt;10.0.1.0/24-&amp;gt;FW&amp;nbsp;&lt;/div&gt;&lt;span style=&quot;&quot;&gt;&lt;div style=&quot;&quot;&gt;10.0.2.0/24-&amp;gt;FW&lt;br&gt;&lt;/div&gt;&lt;div style=&quot;&quot;&gt;10.0.3.0/24-FW&lt;/div&gt;&lt;/span&gt;&lt;div style=&quot;&quot;&gt;10.0.0.0/24-&amp;gt;FW(*)&lt;/div&gt;&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;&lt;div style=&quot;&quot;&gt;&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;- Disable BGP Propagation&lt;/b&gt;&lt;/div&gt;&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;&lt;div style=&quot;&quot;&gt;&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;&lt;b style=&quot;border-color: var(--border-color);&quot;&gt;- Default (0/0) or RFC 1918 to LBFW&lt;/b&gt;&lt;/b&gt;&lt;/div&gt;&lt;/b&gt;&lt;/b&gt;" style="aspect=fixed;html=1;points=[];align=center;image;fontSize=12;image=img/lib/azure2/networking/Route_Tables.svg;fontStyle=1" parent="GG4BnJNfrM99DxpE0gCM-54" vertex="1">
@@ -584,7 +584,7 @@
         </mxGraphModel>
     </diagram>
     <diagram name="NextHop Scenario2-ARS+UDR" id="nMRMOAZGw8Ib743bY6ul">
-        <mxGraphModel dx="2459" dy="1056" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2806" dy="1185" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="vu-DCUKKkq5ANvkyzV8V-0"/>
                 <mxCell id="vu-DCUKKkq5ANvkyzV8V-1" parent="vu-DCUKKkq5ANvkyzV8V-0"/>
@@ -879,7 +879,7 @@
         </mxGraphModel>
     </diagram>
     <diagram name="Scenario3-SD-VNET+UDR" id="v_oJ7eFrxNq7j85Yx0EX">
-        <mxGraphModel dx="2459" dy="1056" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2625" dy="1067" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="troMd9qhn7XEFZoUYkuW-0"/>
                 <mxCell id="troMd9qhn7XEFZoUYkuW-1" parent="troMd9qhn7XEFZoUYkuW-0"/>
@@ -1217,7 +1217,7 @@
         </mxGraphModel>
     </diagram>
     <diagram name="Scenario4-SD-VNET-No-UDR" id="fg_aUSsqdtVwuYPJ-FRe">
-        <mxGraphModel dx="2459" dy="656" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2625" dy="667" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="qtWIJfbaRZCaUJlG2W6L-0"/>
                 <mxCell id="qtWIJfbaRZCaUJlG2W6L-1" parent="qtWIJfbaRZCaUJlG2W6L-0"/>

@@ -2,8 +2,8 @@
 project=angular-expanse-327722 #Set your project Name. Get your PROJECT_ID use command: gcloud projects list 
 region=us-east1 #Set your region. Get Regions/Zones Use command: gcloud compute zones list
 zone=us-east1-b # Set availability zone: a, b or c.
-vpcrange=192.168.100.0/24
-envname=er-migration
+vpcrange=192.168.150.0/24
+envname=er-onprem2
 vmname=vm1
 mypip=$(curl -4 ifconfig.io -s) #Gets your Home Public IP or replace with that information. It will add it to the Firewall Rule.
 

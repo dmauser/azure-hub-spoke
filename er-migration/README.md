@@ -146,12 +146,15 @@ er-migration/
 ├── scripts/
 │   ├── deploy.ps1                   # full end-to-end deploy (Windows / PowerShell)
 │   ├── deploy.sh                    # full end-to-end deploy (Linux / Bash)
+│   ├── deploy-azure.ps1            # Azure-only deploy, no GCP/Megaport, own RG + isolated state (PowerShell)
 │   ├── cleanup.ps1                  # full lab teardown (Windows / PowerShell)
 │   ├── cleanup.sh                   # full lab teardown (Linux / Bash)
 │   ├── deploy-gcp.ps1               # GCP-side-only helper (Windows / PowerShell)
 │   ├── ping-monitor.sh              # GCP-side ping monitor for migration interruption (Bash)
 │   ├── validate-lab.ps1            # read-only health check (Windows / PowerShell)
-│   └── validate-lab.sh             # read-only health check (Linux / Bash)
+│   ├── validate-lab.sh             # read-only health check (Linux / Bash)
+│   ├── dump-routes-azure.ps1       # read-only ER circuit + ER gateway route dump (PowerShell)
+│   └── dump-routes-gcp.ps1         # read-only GCP Cloud Router / VPC route dump (PowerShell)
 └── terraform/
     ├── backend.tf
     ├── locals.tf
@@ -246,8 +249,11 @@ The deploy scripts run the whole flow: prerequisite checks, authentication, pass
 ```powershell
 cd er-migration\scripts
 ./deploy.ps1 -GcpProject <your-gcp-project>
-# Azure-only:
+# Azure-only (still drives the Megaport circuit/connection phases):
 ./deploy.ps1 -SkipGcp
+# Azure infrastructure ONLY (no GCP, no Megaport, no ER connection) into its own
+# resource group, with isolated Terraform state (does not affect the main lab):
+./deploy-azure.ps1 -ResourceGroup lab-er-azure-only -AzureRegion westus3
 ```
 
 **Linux (Bash):**

@@ -25,6 +25,8 @@
 [CmdletBinding()]
 param(
     [string]$AzureRegion = "westus3",
+    [string]$ResourceGroup = "lab-er-migration",
+    [string]$Subscription,
     [string]$GcpProject,
     [string]$GcpRegion = "us-east1",
     [string]$GcpZone   = "us-east1-b",
@@ -36,7 +38,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Lab constants (must match the Terraform configuration).
-$Rg            = "lab-er-migration"
+$Rg            = $ResourceGroup
 $Circuit       = "az-hub-er-circuit"
 $Gateway       = "az-hub-ergw"
 $ConnName      = "$Gateway-to-$Circuit"
@@ -199,6 +201,39 @@ function Repair-FailedErConnection {
     return $false
 }
 
+# Runs 'terraform apply' with retries. Long deployments (the ExpressRoute gateway
+# alone takes 30-45 min) occasionally hit transient Azure control-plane errors such
+# as "context deadline exceeded" or "HTTP response was nil; connection may have been
+# reset" when connectivity to management.azure.com briefly drops. Terraform apply is
+# idempotent, so re-applying reconciles whatever did not finish. The first attempt
+# uses the reviewed saved plan; retries re-plan against current state (the saved plan
+# is stale once a partial apply has changed it). Must be called from within $TerraformDir.
+function Invoke-TfApplyWithRetry {
+    param(
+        [string]$PlanFile,
+        [int]$MaxAttempts = 3,
+        [string]$Label = "terraform apply"
+    )
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if ($attempt -eq 1 -and $PlanFile -and (Test-Path $PlanFile)) {
+            terraform apply -input=false $PlanFile
+        } else {
+            Write-Warn2 "[$Label] Attempt $attempt/$MaxAttempts - re-planning and applying against current state (auto-approve)..."
+            terraform apply -input=false -auto-approve
+        }
+        if ($LASTEXITCODE -eq 0) {
+            if ($attempt -gt 1) { Write-Ok "[$Label] succeeded on attempt $attempt." }
+            return
+        }
+        if ($attempt -lt $MaxAttempts) {
+            $wait = 30 * $attempt
+            Write-Warn2 "[$Label] failed (exit $LASTEXITCODE). This is usually a transient Azure control-plane error (context deadline exceeded / connection reset). Retrying in ${wait}s..."
+            Start-Sleep -Seconds $wait
+        }
+    }
+    throw "$Label failed after $MaxAttempts attempts. Re-run this script to resume - Terraform apply is idempotent and will pick up where it left off."
+}
+
 # ----------------------------------------------------------------------------
 $ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TerraformDir = Resolve-Path (Join-Path $ScriptDir "..\terraform")
@@ -226,6 +261,15 @@ if (-not $PSBoundParameters.ContainsKey('AzureRegion')) {
 }
 Write-Ok "Azure region : $AzureRegion"
 
+# --- Azure resource group ---
+Write-Step "Azure resource group (press Enter to accept the [default])"
+if (-not $PSBoundParameters.ContainsKey('ResourceGroup')) {
+    $inRg = Read-Host "Azure resource group [$ResourceGroup]"
+    if ($inRg) { $ResourceGroup = $inRg }
+}
+$Rg = $ResourceGroup
+Write-Ok "Azure resource group : $Rg"
+
 # --- Prerequisites ---
 Write-Step "Checking prerequisites"
 Ensure-Tool "az"        | Out-Null
@@ -251,15 +295,44 @@ if ($useGcp) {
     Write-Ok "project = $GcpProject | region = $GcpRegion | zone = $GcpZone"
 }
 
-# --- Azure subscription ---
-Write-Step "Resolving Azure subscription"
+# --- Azure authentication ---
+Write-Step "Checking Azure authentication"
 $azSub = (az account show --query id -o tsv 2>$null)
 if (-not $azSub) {
     Write-Warn2 "Not logged in to Azure. Launching 'az login'..."
     az login | Out-Null
     $azSub = (az account show --query id -o tsv 2>$null)
 }
-if (-not $azSub) { throw "No active Azure subscription. Run 'az login' and 'az account set --subscription <id>'." }
+if (-not $azSub) { throw "Azure login failed. Run 'az login' manually, then re-run this script." }
+$azUser = (az account show --query user.name -o tsv 2>$null)
+Write-Ok "Authenticated to Azure as $azUser"
+
+# --- Azure subscription selection ---
+Write-Step "Selecting Azure subscription"
+$curName = (az account show --query name -o tsv 2>$null)
+Write-Ok "Current subscription: $curName ($azSub)"
+$subs = @(az account list --query "sort_by([?state=='Enabled'].{name:name, id:id}, &name)" -o json 2>$null | ConvertFrom-Json)
+if ($PSBoundParameters.ContainsKey('Subscription') -and $Subscription) {
+    az account set --subscription $Subscription | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not switch to subscription '$Subscription'. Check the name/ID and try again." }
+    $azSub   = (az account show --query id -o tsv 2>$null)
+    $curName = (az account show --query name -o tsv 2>$null)
+    Write-Ok "Using subscription: $curName ($azSub)"
+} elseif ($subs.Count -gt 1) {
+    Write-Host "    Available subscriptions:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $subs.Count; $i++) {
+        Write-Host ("      [{0}] {1}  ({2})" -f $i, $subs[$i].name, $subs[$i].id)
+    }
+    $pick = Read-Host "Subscription number to use [press Enter to keep current]"
+    if ($pick -match '^\d+$' -and [int]$pick -lt $subs.Count) {
+        $azSub = $subs[[int]$pick].id
+        az account set --subscription $azSub | Out-Null
+        $curName = $subs[[int]$pick].name
+        Write-Ok "Switched to subscription: $curName ($azSub)"
+    } else {
+        Write-Ok "Keeping current subscription: $curName ($azSub)"
+    }
+}
 $env:ARM_SUBSCRIPTION_ID = $azSub
 Write-Ok "ARM_SUBSCRIPTION_ID = $azSub"
 
@@ -305,11 +378,12 @@ Write-Step "Writing $TfvarsPath"
 $gcpProjLine = if ($useGcp) { $GcpProject } else { "er-migration-lab-unused" }
 $gcpRegLine  = if ($useGcp) { $GcpRegion } else { "us-east1" }
 $gcpZoneLine = if ($useGcp) { $GcpZone }   else { "us-east1-b" }
-$deployGcp   = if ($useGcp) { "true" } else { "false" }
+$deployGcpLine = if ($useGcp) { "true" } else { "false" }
 $tfvars = @"
 # Generated by scripts/deploy.ps1 on $(Get-Date -Format o).
 # admin_password is supplied via the TF_VAR_admin_password environment variable.
 
+rg_name     = "$Rg"
 location    = "$AzureRegion"
 
 gcp_project = "$gcpProjLine"
@@ -317,7 +391,7 @@ gcp_region  = "$gcpRegLine"
 gcp_zone    = "$gcpZoneLine"
 
 gcp_onprem = {
-  deploy_gcp       = $deployGcp
+  deploy_gcp       = $deployGcpLine
   network_name     = "gcp-on-prem-vpc"
   network_cidr     = "192.168.100.0/24"
   subnet_cidr      = "192.168.100.0/24"
@@ -353,8 +427,7 @@ try {
     if ($answer -ne "yes") { Write-Warn2 "Apply skipped. Saved plan: $TerraformDir\lab.tfplan"; return }
 
     Write-Step "terraform apply (this can take 30-45 minutes for the ExpressRoute gateway)"
-    terraform apply -input=false "lab.tfplan"
-    if ($LASTEXITCODE -ne 0) { throw "terraform apply failed." }
+    Invoke-TfApplyWithRetry -PlanFile "lab.tfplan" -Label "infrastructure apply"
     Write-Ok "Infrastructure apply complete."
 
     # --- Phase 2: keys for Megaport ---
@@ -425,8 +498,7 @@ try {
 
     terraform plan -input=false "-out=conn.tfplan"
     if ($LASTEXITCODE -ne 0) { throw "terraform plan (connection) failed." }
-    terraform apply -input=false "conn.tfplan"
-    if ($LASTEXITCODE -ne 0) { throw "terraform apply (connection) failed." }
+    Invoke-TfApplyWithRetry -PlanFile "conn.tfplan" -Label "connection apply"
     Write-Ok "Connection apply complete."
 
     # --- Phase 7: poll the connection to Succeeded ---
