@@ -879,7 +879,7 @@
         </mxGraphModel>
     </diagram>
     <diagram name="Scenario3-SD-VNET+UDR" id="v_oJ7eFrxNq7j85Yx0EX">
-        <mxGraphModel dx="2625" dy="1067" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
+        <mxGraphModel dx="2625" dy="943" grid="0" gridSize="10" guides="0" tooltips="0" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="850" background="none" math="0" shadow="0">
             <root>
                 <mxCell id="troMd9qhn7XEFZoUYkuW-0"/>
                 <mxCell id="troMd9qhn7XEFZoUYkuW-1" parent="troMd9qhn7XEFZoUYkuW-0"/>
